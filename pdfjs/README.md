@@ -19,9 +19,11 @@ Embedded pdf.js viewer.
 - **`sw.js`** — service worker, scoped to `/pdfjs/`. On the first fetch
   under this subpath it:
   1. Fetches `fflate@0.8.3` from jsdelivr, sha256-verifies the bytes
-     against the pin in `FFLATE_SHA256_HEX` (since `importScripts()`
-     doesn't natively support SRI like `<script integrity>` does), then
-     `importScripts`es the verified blob URL.
+     against the pin in `FFLATE_SHA256_B64`, then evaluates the verified
+     UMD source in the SW global (via `new Function`). SW contexts don't
+     have `URL.createObjectURL`, so the usual blob-URL + `<script
+     integrity>` pattern isn't available — we manually hash-check the
+     bytes and run them, same effect.
   2. Fetches the ZIP, sha256-verifies it against `ZIP_SHA256_HEX`,
      decompresses with the now-trusted fflate, and serves the archive
      entries with proper Content-Types.
