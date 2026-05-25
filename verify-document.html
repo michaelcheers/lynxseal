@@ -183,6 +183,42 @@ function _binaryStrToBytes(s) {
   return out;
 }
 
+// node-forge does RSA in pure JS — ~10× slower than native. Hand the actual
+// signature verification to WebCrypto's SubtleCrypto while keeping forge for
+// ASN.1 / cert parsing. Used for both the SignerInfo signature check and each
+// chain link (signerCert signed by trusted root).
+async function _webCryptoVerifyRSA(forgePublicKey, signatureBytes, dataBytes) {
+  const spkiDer = forge.asn1.toDer(forge.pki.publicKeyToAsn1(forgePublicKey)).getBytes();
+  const spkiU8 = _binaryStrToBytes(spkiDer);
+  const key = await crypto.subtle.importKey(
+    'spki', spkiU8,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['verify']
+  );
+  const sigU8 = typeof signatureBytes === 'string' ? _binaryStrToBytes(signatureBytes) : signatureBytes;
+  const dataU8 = dataBytes instanceof Uint8Array ? dataBytes : _binaryStrToBytes(dataBytes);
+  return await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, sigU8, dataU8);
+}
+
+// Verify cert was signed by issuer's public key. Replaces the RSA-verify part
+// of forge.pki.verifyCertificateChain with WebCrypto; we still check issuer
+// match and validity dates manually below.
+async function _webCryptoVerifyCertSignedBy(cert, issuerCert) {
+  const tbsDer = forge.asn1.toDer(forge.pki.getTBSCertificate(cert)).getBytes();
+  return await _webCryptoVerifyRSA(issuerCert.publicKey, cert.signature, _binaryStrToBytes(tbsDer));
+}
+
+function _certIssuerMatches(cert, issuerCert) {
+  const a = cert.issuer.attributes, b = issuerCert.subject.attributes;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i].type !== b[i].type || a[i].value !== b[i].value) return false;
+  return true;
+}
+
+function _certValid(cert, when) {
+  return when >= cert.validity.notBefore && when <= cert.validity.notAfter;
+}
+
 async function checkDigitalSignatureInternal(buffer, viewable = false) {
   try {
     signingInfoDetails.innerHTML = '';
@@ -259,17 +295,17 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     if (messageDigestHex !== docDigestHex) throw new Error('Hash is not correct');
 
     // === Verify: cert chains to one of the trusted roots ===
-    // forge.pki.verifyCertificateChain returns true or throws. We use the
-    // try/per-trust-anchor loop so the "old CA" trust path is tried
-    // separately and shown to the user.
+    // Per-trust-anchor loop so the "old CA" path is tried separately. RSA
+    // signature verify is done via WebCrypto (native, fast); issuer match
+    // and validity dates are checked manually.
     let trustedIndex = -1;
+    const now = new Date();
+    if (!_certValid(signerCert, now)) throw new Error('Certificate not currently valid');
     for (let i = 0; i < trustedCertificates.length; i++) {
-      const oneStore = forge.pki.createCaStore([trustedCertificates[i]]);
-      try {
-        forge.pki.verifyCertificateChain(oneStore, [signerCert]);
-        trustedIndex = i;
-        break;
-      } catch { /* try next */ }
+      const root = trustedCertificates[i];
+      if (!_certIssuerMatches(signerCert, root)) continue;
+      if (!_certValid(root, now)) continue;
+      if (await _webCryptoVerifyCertSignedBy(signerCert, root)) { trustedIndex = i; break; }
     }
     if (trustedIndex < 0) throw new Error('Signature verification failed');
 
@@ -277,6 +313,8 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     // Signed bytes are the DER encoding of the SignedAttributes structure
     // RE-TAGGED as a UNIVERSAL SET (tag 0x31) rather than the [0] IMPLICIT
     // context-specific tag it had in the SignerInfo. Spec: RFC 5652 §5.4.
+    // WebCrypto hashes internally for RSASSA-PKCS1-v1_5 + SHA-256, so we
+    // pass the raw signedAttrsDer bytes, not a pre-computed digest.
     const reTagged = forge.asn1.create(
       forge.asn1.Class.UNIVERSAL,
       forge.asn1.Type.SET,
@@ -284,9 +322,7 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
       signedAttrsAsn1.value,
     );
     const signedAttrsDer = forge.asn1.toDer(reTagged).getBytes();
-    const sigInputDigest = forge.md.sha256.create();
-    sigInputDigest.update(signedAttrsDer);
-    const sigOk = signerCert.publicKey.verify(sigInputDigest.digest().bytes(), signatureBytes);
+    const sigOk = await _webCryptoVerifyRSA(signerCert.publicKey, signatureBytes, _binaryStrToBytes(signedAttrsDer));
     if (!sigOk) throw new Error('Signature verification failed');
 
     // === Extract org name (O attribute) from signer cert subject for display ===
