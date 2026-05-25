@@ -17,9 +17,10 @@
   const SW_SCOPE = '/pdfjs/';
   const VIEWER_URL = '/pdfjs/web/viewer.html';
 
-  // Register once per page load. navigator.serviceWorker.ready resolves to
-  // the active registration for our scope, which is what we want — it
-  // waits past `installing` / `waiting` until there's an active SW.
+  // Register once per page load and wait until the SW for our /pdfjs/ scope
+  // is active. We can't use navigator.serviceWorker.ready because that only
+  // resolves when an SW controls the *current document* — and the portal
+  // page isn't under /pdfjs/ scope, so nothing ever controls it.
   let _readyPromise = null;
   function _ensureReady() {
     if (_readyPromise) return _readyPromise;
@@ -27,8 +28,18 @@
       _readyPromise = Promise.reject(new Error('Service workers not supported in this browser'));
       return _readyPromise;
     }
-    _readyPromise = navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE })
-      .then(() => navigator.serviceWorker.ready);
+    _readyPromise = (async () => {
+      const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE });
+      if (reg.active) return reg;
+      const sw = reg.installing || reg.waiting;
+      if (!sw) throw new Error('SW registered but has no installing/waiting/active worker');
+      await new Promise((resolve) => {
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'activated') resolve();
+        });
+      });
+      return reg;
+    })();
     return _readyPromise;
   }
 
