@@ -276,9 +276,10 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     const signatureBytes = signerInfo.value[5].value; // octet string contents
 
     // === Verify: doc SHA-256 == messageDigest attribute ===
-    const docDigest = forge.md.sha256.create();
-    docDigest.update(_bytesToBinaryStr(signedData));
-    const docDigestHex = docDigest.digest().toHex();
+    // WebCrypto for the big hash — forge.md.sha256 is pure JS and crawls on
+    // multi-MB PDFs.
+    const docDigestBuf = await crypto.subtle.digest('SHA-256', signedData);
+    const docDigestHex = Array.from(new Uint8Array(docDigestBuf), b => b.toString(16).padStart(2, '0')).join('');
 
     // SignedAttributes is a SET of Attribute { type OID, values SET OF ANY }.
     // Find type=messageDigest (1.2.840.113549.1.9.4), value is an OCTET STRING.
