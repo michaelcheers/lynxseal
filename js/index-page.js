@@ -67,19 +67,16 @@ function addPDFToPreview(oldIframe, pdf) {
     iframe.setAttribute('id', oldIframe.getAttribute('id'));
     oldIframe.remove();
   };
-  if (navigator.pdfViewerEnabled ?? ('PDF Viewer' in navigator.plugins)) {
-    const url = URL.createObjectURL(pdf);
-    iframe.setAttribute('src', url);
-    iframe.onload = () => { URL.revokeObjectURL(url); resetIframe(); };
-  } else {
-    // Load the pdf.js viewer via the audit-friendly loader: it extracts the
-    // committed upstream release ZIP client-side, hash-verifies it, and
-    // wires viewer.html via srcdoc + blob URLs. See pdfjs-loader.js.
-    window.LynxsealPdfjs.openViewer(iframe)
-      .then(async app => { await app.open(await pdf.arrayBuffer()); })
-      .catch(reportErrorAlert)
-      .finally(resetIframe);
-  }
+  // Always use pdf.js (not the browser's built-in PDF viewer). The native
+  // viewer runs in a chrome-extension iframe that Brave Shields / strict
+  // CSPs / nested-sandbox contexts can refuse to render ("This page has
+  // been blocked by Brave"). The audit-friendly loader extracts the
+  // committed upstream release ZIP client-side, hash-verifies it, and
+  // wires viewer.html via srcdoc + blob URLs. See pdfjs-loader.js.
+  window.LynxsealPdfjs.openViewer(iframe)
+    .then(async app => { await app.open(await pdf.arrayBuffer()); })
+    .catch(reportErrorAlert)
+    .finally(resetIframe);
 }
 
 // Drag-to-position stamp overlay (every-page mode) ---------------------------
@@ -611,21 +608,21 @@ function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
         if (stampEveryPage) _stampedPackage = await applyStampsFn();
         const asBlob = new Blob([getStampedPackage()], { type: 'application/pdf' });
         const stampedPdfFrame = modalDlg.querySelector('[name=stampedPdfFrame]');
-        if (window.DeclarationContext.association.name === 'ATIO') {
-          window.LynxsealPdfjs.openViewer(stampedPdfFrame)
-            .then(async app => {
-              await app.open(await asBlob.arrayBuffer());
+        // Always use pdf.js — native browser PDF viewer gets blocked by Brave
+        // Shields and stricter sandbox/CSP contexts. ATIO additionally hides
+        // the viewer's toolbar buttons; for other tenants we leave them on.
+        const hideToolbar = window.DeclarationContext.association.name === 'ATIO';
+        window.LynxsealPdfjs.openViewer(stampedPdfFrame)
+          .then(async app => {
+            await app.open(await asBlob.arrayBuffer());
+            if (hideToolbar) {
               const doc = stampedPdfFrame.contentDocument;
               for (const id of ['print', 'download', 'openFile', 'viewBookmark']) {
                 const el = doc.getElementById(id); if (el) el.style.display = 'none';
               }
-            })
-            .catch(reportErrorAlert);
-        } else {
-          const url = URL.createObjectURL(asBlob);
-          stampedPdfFrame.src = url;
-          stampedPdfFrame.onload = () => URL.revokeObjectURL(url);
-        }
+            }
+          })
+          .catch(reportErrorAlert);
         stampedPdfFrame.style.display = '';
         modalDlg.querySelector('[name=stampedPdfFramePlaceholder]').style.display = 'none';
       } catch (e) { reportErrorAlert(e); }
