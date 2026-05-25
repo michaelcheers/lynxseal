@@ -117,8 +117,10 @@
         <label class="form-group">
           <b><span class="en-only">Declaration Customization</span><span class="fr-only">Personnalisation de la déclaration</span></b><br>
           <select style="margin-left:2em;width:calc(100% - 2em)" id="declarationType" name="customization" class="form-control">
-            <option value="default" selected><span class="en-only">No Customization</span><span class="fr-only">Pas de personnalisation</span></option>
-            <option id="newProfileOpt" value="newProfile"><span class="en-only">+ New</span><span class="fr-only">+ Nouveau</span></option>
+            <option value="default" class="en-only" selected>No Customization</option>
+            <option value="default" class="fr-only">Pas de personnalisation</option>
+            <option id="newProfileOpt" value="newProfile" class="en-only">+ New</option>
+            <option value="newProfile" class="fr-only">+ Nouveau</option>
           </select>
           <div id="editOperationsDiv" style="display:none">
             <button class="btn btn-info" type="button" id="editProfileBtn"><span class="en-only">Edit</span><span class="fr-only">Modifier</span></button>
