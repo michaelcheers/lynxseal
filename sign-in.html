@@ -91,15 +91,8 @@
 <script>
 const qs = new URLSearchParams(location.search);
 
-// Language toggle (cookie + body class) — mirrors the existing site.
-function applyLang(lang) {
-  document.body.classList.toggle('lang-fr', lang === 'fr');
-  document.body.classList.toggle('lang-en', lang !== 'fr');
-  localStorage.setItem('lang', lang);
-}
-applyLang(qs.get('lang') || localStorage.getItem('lang') || 'en');
-document.getElementById('enBtn').addEventListener('click', e => { e.preventDefault(); applyLang('en'); });
-document.getElementById('frBtn').addEventListener('click', e => { e.preventDefault(); applyLang('fr'); });
+// Default to English. Per-tenant L10n lives in the wrapper, not the portal.
+document.body.classList.add('lang-en');
 
 // Pre-fill bad-signin alert if previous attempt failed and the page was reloaded with ?bad-signin.
 if (qs.has('bad-signin')) {
