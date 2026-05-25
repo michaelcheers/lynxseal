@@ -391,17 +391,6 @@ async function _formDataWithSanitizedPngs(form) {
   document.getElementById('profileEditForm').addEventListener('submit', e => { e.preventDefault(); profileEditSubmit(); });
   document.getElementById('credentialInfoTextarea').setAttribute('placeholder', `${ctx.member.firstName} ${ctx.member.lastName}\nCertified Translator`);
 
-  // Language toggle in header
-  document.getElementById('langEn').addEventListener('click', e => { e.preventDefault(); switchLanguage('en'); });
-  document.getElementById('langFr').addEventListener('click', e => { e.preventDefault(); switchLanguage('fr'); });
-
-  // Sign-out link
-  document.getElementById('signOutBtn').addEventListener('click', async e => {
-    e.preventDefault();
-    try { await api.post('/api/sign-out', {}); } catch {}
-    location.href = '/sign-in.html';
-  });
-
   // Live preview as the user edits the customization form
   for (const input of document.getElementById('profileEditForm').querySelectorAll('input, textarea, select')) {
     input.addEventListener('input', () => {

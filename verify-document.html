@@ -13,11 +13,6 @@
 <script src="/js/argon2-init.js?v=1"></script>
 </head>
 <body>
-<header style="background:#fff;border-bottom:1px solid #ddd;padding:8px 16px;display:flex;align-items:center;gap:16px;">
-  <div style="flex:1"></div>
-  <a href="#" id="langEn">EN</a>
-  <a href="#" id="langFr">FR</a>
-</header>
 <main id="mainContent" style="display:none">
 
 <form style="display:none" id="hashForm">
@@ -121,8 +116,6 @@ function switchLanguage(lang) {
   history.replaceState(null, '', url.toString());
 }
 switchLanguage(new URLSearchParams(location.search).get('lang') || 'en');
-document.getElementById('langEn').addEventListener('click', e => { e.preventDefault(); switchLanguage('en'); });
-document.getElementById('langFr').addEventListener('click', e => { e.preventDefault(); switchLanguage('fr'); });
 
 function fromCustomBase64(s) {
   return s.replaceAll('-', 'O').replaceAll('=', 'l').padEnd(Math.ceil(s.length / 4) * 4, '=');
