@@ -75,6 +75,16 @@
               .observe(titleEl, { childList: true, characterData: true, subtree: true });
           }
         } catch {}
+        // Rewrite same-origin <a href> to point at the wrapper origin so
+        // hover/copy-link shows e.g. certify.stibc.org/reset-password, not
+        // portal.lynxseal.com/reset-password.html. The click interceptor
+        // below then preventDefault's and navigates the iframe directly
+        // (so we don't pay a top-frame reload or end up nested in another
+        // wrapper instance).
+        try {
+          rewriteLinks();
+          new MutationObserver(rewriteLinks).observe(document.body, { childList: true, subtree: true });
+        } catch {}
         initResolve();
         break;
       case 'popstate':
@@ -90,6 +100,45 @@
     }
   });
 
+  // Rewrite same-origin <a href> to use the wrapper origin (with .html
+  // stripped), so on hover the browser shows the user-facing wrapper URL
+  // instead of portal.lynxseal.com. Idempotent — we tag rewritten links
+  // with a data attribute and skip them on re-runs.
+  function rewriteLinks() {
+    if (!wrapperOrigin) return;
+    for (const a of document.querySelectorAll('a[href]:not([data-pb-rewritten])')) {
+      const raw = a.getAttribute('href');
+      if (!raw || raw.startsWith('javascript:') || raw.startsWith('mailto:') || raw.startsWith('tel:') || raw.startsWith('#')) continue;
+      let url;
+      try { url = new URL(raw, location.href); } catch { continue; }
+      if (url.origin !== location.origin) continue; // external link, leave alone
+      const wrapperPath = url.pathname.replace(/\.html$/, '');
+      a.href = wrapperOrigin + wrapperPath + url.search + url.hash;
+      a.setAttribute('data-pb-rewritten', '1');
+    }
+  }
+
+  // Capture-phase click interceptor: when the user clicks a wrapper-origin
+  // link inside the iframe, navigate the iframe (not the top frame) to the
+  // matching portal path. Without this the link would either nav the top
+  // frame (slow full reload) or load the wrapper inside our iframe (nested).
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest('a[href]');
+    if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+    let url;
+    try { url = new URL(a.href, location.href); } catch { return; }
+    if (!wrapperOrigin || url.origin !== wrapperOrigin) return;
+    e.preventDefault();
+    // Same-page hash change: don't reload.
+    const portalPath = (url.pathname && url.pathname !== '/') ? (url.pathname.endsWith('.html') ? url.pathname : url.pathname + '.html') : '/';
+    if (portalPath === location.pathname && url.search === location.search) {
+      location.hash = url.hash;
+    } else {
+      location.href = portalPath + url.search + url.hash;
+    }
+  }, true);
+
   // Public API used by api.js and individual pages.
   window.PortalBridge = {
     // Wait for the init handshake to complete. After this resolves,
@@ -104,6 +153,8 @@
     navigate(path) { send({ type: 'navigate', path }); },
   };
 
-  // Kick off handshake.
-  send({ type: 'init' });
+  // Kick off handshake. Include current path so the wrapper can sync its
+  // URL bar — every navigation inside the iframe is a fresh page load, which
+  // re-runs this script with the new location.
+  send({ type: 'init', path: location.pathname + location.search + location.hash });
 })();
