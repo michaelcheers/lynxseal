@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Verify</title>
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+</head>
+<body>
+<main>
+<div class="col-md-8 mx-auto">
+  <div id="loadingMsg">Verifying…</div>
+  <form id="pwForm" style="display:none">
+    Choose a password:<br><br>
+    <div class="form-group">
+      <label for="pw1">Password</label>
+      <input id="pw1" type="password" name="password" required
+        pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{8,}$"
+        title="Password must be at least 8 characters and contain uppercase, lowercase, and a number.">
+    </div>
+    <div class="form-group">
+      <label for="pw2">Confirm Password</label>
+      <input id="pw2" type="password" required>
+    </div>
+    <div class="form-group">
+      <input type="checkbox" name="rememberMe" id="rememberMe">
+      <label for="rememberMe" style="display:inline">Remember Me</label>
+    </div>
+    <button class="btn btn-primary" type="submit">Change Password</button>
+  </form>
+  <div id="errorMsg" class="alert alert-danger" style="display:none"></div>
+</div>
+</main>
+<script>
+const code = new URLSearchParams(location.search).get('code') || location.pathname.replace(/^\/verify\//, '').replace(/\.html$/, '');
+
+function showError(msg) {
+  document.getElementById('loadingMsg').style.display = 'none';
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg; el.style.display = '';
+}
+
+(async () => {
+  try {
+    const r = await api.get('/api/verify?code=' + encodeURIComponent(code), { noAutoRedirect: true });
+    if (r.needsPasswordChange) {
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('pwForm').style.display = '';
+    } else if (r.ok) {
+      if (r.token) window.PortalBridge.setAuth(r.token, !!r.isAdmin);
+      location.href = r.redirectTo || '/';
+    } else {
+      showError('Unexpected response: ' + JSON.stringify(r));
+    }
+  } catch (e) { showError(e.message || String(e)); }
+})();
+
+document.getElementById('pwForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (pw1.value !== pw2.value) { alert('Passwords do not match'); return; }
+  try {
+    const r = await api.post('/api/verify', { code, password: pw1.value, rememberMe: document.getElementById('rememberMe').checked });
+    if (r.ok) {
+      if (r.token) window.PortalBridge.setAuth(r.token, !!r.isAdmin);
+      location.href = r.redirectTo || '/';
+    } else showError('Unexpected response: ' + JSON.stringify(r));
+  } catch (e) { showError(e.message || String(e)); }
+});
+</script>
+</body>
+</html>

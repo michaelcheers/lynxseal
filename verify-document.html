@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check a digital stamp</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha256-YLGeXaapI0/5IgZopewRJcFXomhRMlYYjugPLSyNjTY=" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="/css/site.css">
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/argon2-init.js?v=1"></script>
+</head>
+<body>
+<header style="background:#fff;border-bottom:1px solid #ddd;padding:8px 16px;display:flex;align-items:center;gap:16px;">
+  <a class="brand" href="/" style="font-weight:700">Lynxseal</a>
+  <div style="flex:1"></div>
+  <a href="#" id="langEn">EN</a>
+  <a href="#" id="langFr">FR</a>
+</header>
+<main id="mainContent" style="display:none">
+
+<form style="display:none" id="hashForm">
+  <input type="hidden" id="hashValue" name="hash">
+</form>
+
+<div class="container" style="margin-top:2em">
+  <div class="row justify-content-center" style="height:80vh">
+    <div class="col-sm-6">
+      <div class="card h-100">
+        <div class="card-body">
+          <h6 style="text-align:center">
+            <span class="en-only">Verify the validity of a <span id="assocName1"></span> digitally stamped document</span>
+            <span class="fr-only">Vérifiez la validité d'un document tamponné numériquement par <span id="assocName2"></span></span>
+          </h6><br>
+
+          <form onsubmit="performVerification();return false;">
+            <div class="form-group">
+              <label for="translationPackage">
+                <span class="en-only">Translation Document (PDF)</span>
+                <span class="fr-only">Document de traduction (PDF)</span>
+              </label>
+              <input class="form-control" id="translationPackage" type="file" accept=".pdf">
+            </div>
+            <div class="form-group" id="certNumberGroup" style="display:none">
+              <label for="certNumber">
+                <span class="en-only">OR Verification Code (case sensitive)</span>
+                <span class="fr-only">OU Code de vérification (sensible à la casse)</span>
+              </label>
+              <input class="form-control" id="certNumber" name="certNumber" type="text" minlength="18" maxlength="18">
+            </div>
+            <button class="btn btn-primary">
+              <span class="en-only">Check Digital Stamp</span>
+              <span class="fr-only">Vérifier le tampon numérique</span>
+            </button>
+          </form>
+
+          <br><br>
+          <div id="signingInfo" style="font-weight:bold;text-align:center"></div>
+          <div id="signingInfoDiv">
+            <div>
+              <div id="signingInfoDetails" style="font-family:Times;font-size:1.5rem"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// Will be filled from /api/public-context. SupportsQR controls the QR
+// verification flow (hash-based) vs PDF-only verification.
+let SUPPORTS_QR = false;
+let ASSOCIATION = null;
+
+(async () => {
+  try {
+    const ctx = await api.get('/api/public-context');
+    SUPPORTS_QR = !!ctx.association.supportsQr;
+    ASSOCIATION = ctx.association;
+    document.getElementById('assocName1').textContent = ctx.association.name;
+    document.getElementById('assocName2').textContent = ctx.association.name;
+    if (SUPPORTS_QR) document.getElementById('certNumberGroup').style.display = '';
+    // Style for ATIO vs non-ATIO signing-info-div presentation
+    if (ctx.association.name !== 'ATIO') {
+      const div = document.getElementById('signingInfoDiv');
+      div.onclick = () => { div.style.display = 'none'; };
+      Object.assign(div.style, {
+        display: 'none', position: 'fixed', top: 0, left: 0, width: '100%',
+        overflow: 'hidden', zIndex: 99999, height: '100%', backgroundColor: 'rgba(0,0,0,0.5)',
+      });
+      const closer = document.createElement('button');
+      closer.innerHTML = '&times;';
+      closer.onclick = (e) => { e.stopPropagation(); div.style.display = 'none'; };
+      Object.assign(closer.style, { outline: 'none', border: 'none', backgroundColor: 'transparent', float: 'right', zIndex: 999999, position: 'fixed', top: 0, right: 0 });
+      const inner = div.firstElementChild;
+      Object.assign(inner.style, { backgroundColor: 'white', position: 'fixed', top: 0, left: 'calc((100% - min(106.518vh, 100%)) / 2)', width: 'min(106.518vh, 100%)', height: '100%', paddingLeft: '50px' });
+      inner.onclick = (e) => e.stopPropagation();
+      div.prepend(closer);
+      const h1 = document.createElement('h1');
+      h1.innerHTML = '<span class="en-only">Stamp Information</span><span class="fr-only">Informations sur le tampon</span>';
+      inner.prepend(h1);
+    }
+    document.getElementById('mainContent').style.display = '';
+    // Bootstrap trusted certificates + start auto-verify if URL has #key
+    initVerification(ctx.rootCertificateBase64, ctx.oldRootCertificateBase64);
+  } catch (e) {
+    document.body.innerHTML = '<p style="padding:2em;color:#900">Failed to load: ' + (e.message || e) + '</p>';
+  }
+})();
+
+// Language toggle
+function switchLanguage(lang) {
+  document.body.classList.toggle('lang-fr', lang === 'fr');
+  document.body.classList.toggle('lang-en', lang !== 'fr');
+  const url = new URL(location.href);
+  if (lang === 'fr') url.searchParams.set('lang', 'fr'); else url.searchParams.delete('lang');
+  history.replaceState(null, '', url.toString());
+}
+switchLanguage(new URLSearchParams(location.search).get('lang') || 'en');
+document.getElementById('langEn').addEventListener('click', e => { e.preventDefault(); switchLanguage('en'); });
+document.getElementById('langFr').addEventListener('click', e => { e.preventDefault(); switchLanguage('fr'); });
+
+function fromCustomBase64(s) {
+  return s.replaceAll('-', 'O').replaceAll('=', 'l').padEnd(Math.ceil(s.length / 4) * 4, '=');
+}
+function reportErrorAlert(e) { console.error(e); alert(e.message || e); }
+function getErrorOrNull(e) {
+  if (e && e.message && e.message.startsWith('SuperSigning.UserVisibleException:')) return e.message.replace(/^SuperSigning\.UserVisibleException:\s*/, '');
+  return null;
+}
+
+let trustedCertificates;
+let pvtsutils;
+let pkijs;
+
+// Loads an ESM bundle from a CDN with browser-enforced SRI. Native
+// `import(url)` doesn't accept an integrity argument, so we fetch with the
+// integrity option (browser refuses to return the body on hash mismatch)
+// then hand the verified bytes to import() via a same-origin blob URL.
+// referrerPolicy:'no-referrer' matches every other CDN load on the site.
+async function fetchEsm(url, integrity) {
+  const resp = await fetch(url, { integrity, referrerPolicy: 'no-referrer' });
+  const blob = await resp.blob();
+  return await import(URL.createObjectURL(blob));
+}
+
+async function initVerification(rootCertB64, oldRootCertB64) {
+  pvtsutils = await fetchEsm(
+    'https://cdn.jsdelivr.net/npm/pvtsutils@1.3.2/build/index.es.js',
+    'sha384-Ca7zOMXhYe4qpfQJRUUDEKUS3HPorq37nMbXCheQViQK37dBFIO+oKvm0k8EbiVo'
+  );
+  pkijs = await fetchEsm(
+    'https://cdn.jsdelivr.net/npm/pkijs@3.4.0/build/index.es.js',
+    'sha256-bLRy206LxGjlAKajG1mpy77kZ8mnZytz8GrKZ5E2kEw='
+  );
+  const certBuffers = [_base64ToArrayBuffer(rootCertB64)];
+  if (!SUPPORTS_QR && oldRootCertB64) certBuffers.push(_base64ToArrayBuffer(oldRootCertB64));
+  trustedCertificates = certBuffers.flatMap(parseCertificate);
+  // If URL has #<18-char key>, auto-verify via QR flow
+  if (SUPPORTS_QR && location.hash && location.hash.length >= 2) checkQRCode();
+}
+
+function _base64ToArrayBuffer(base64) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+function parseCertificate(source) {
+  const buffers = [];
+  const buffer = pvtsutils.BufferSourceConverter.toArrayBuffer(source);
+  const pem = pvtsutils.Convert.ToBinary(buffer);
+  if (/----BEGIN CERTIFICATE-----/.test(pem)) buffers.push(...decodePEM(pem, 'CERTIFICATE'));
+  else buffers.push(buffer);
+  return buffers.map(item => pkijs.Certificate.fromBER(item));
+}
+
+function parseParameters(hash = window.location.hash.substring(1)) {
+  if (hash.length !== 18) return null;
+  hash = fromCustomBase64(hash);
+  return [hash.substring(0, 4), hash.substring(4)];
+}
+
+async function checkDigitalSignatureInternal(buffer, viewable = false) {
+  try {
+    signingInfoDetails.innerHTML = '';
+    const view = new Uint8Array(buffer);
+    const pdf = new PDFDocument(null, view, null);
+    pdf.parseStartXRef(); pdf.parse();
+    const acroForm = pdf.xref.root.get('AcroForm');
+    if (typeof acroForm === 'undefined') throw new Error('The PDF has no signature!');
+    const fields = acroForm.get('Fields');
+    if (isRef(fields[0]) === false) throw new Error('Wrong structure of PDF!');
+    const sigField = pdf.xref.fetch(fields[0]);
+    const sigFieldType = sigField.get('FT');
+    if (typeof sigFieldType === 'undefined' || sigFieldType.name !== 'Sig') throw new Error('Wrong structure of PDF!');
+    const v = sigField.get('V');
+    const byteRange = v.get('ByteRange');
+    const contents = v.get('Contents');
+    const contentBuffer = new ArrayBuffer(contents.length);
+    const contentView = new Uint8Array(contentBuffer);
+    for (let i = 0; i < contents.length; i++) contentView[i] = contents.charCodeAt(i);
+    const cmsContentSimp = pkijs.ContentInfo.fromBER(contentBuffer);
+    const cmsSignedSimp = new pkijs.SignedData({ schema: cmsContentSimp.content });
+    if (cmsSignedSimp.certificates.length !== 1) throw new Error('Number of certificates in signature invalid!');
+    const signedDataBuffer = new ArrayBuffer(byteRange[1] + byteRange[3]);
+    const signedDataView = new Uint8Array(signedDataBuffer);
+    let count = 0;
+    for (let i = byteRange[0]; i < byteRange[0] + byteRange[1]; i++, count++) signedDataView[count] = view[i];
+    for (let j = byteRange[2]; j < byteRange[2] + byteRange[3]; j++, count++) signedDataView[count] = view[j];
+    for (let i = 0; i < trustedCertificates.length; i++) {
+      let cert = trustedCertificates[i];
+      let verifyResult;
+      try {
+        verifyResult = await cmsSignedSimp.verify({ signer: 0, data: signedDataBuffer, trustedCerts: [cert], checkChain: true });
+        if (!verifyResult) continue;
+      } catch { continue; }
+      let digest;
+      if (!('signedAttrs' in cmsSignedSimp.signerInfos[0])) throw new Error('signedAttrs is not present.');
+      const crypto = pkijs.getCrypto(true);
+      let shaAlgorithm = '';
+      switch (cmsSignedSimp.signerInfos[0].digestAlgorithm.algorithmId) {
+        case '2.16.840.1.101.3.4.2.1': shaAlgorithm = 'sha-256'; break;
+        default: throw new Error('Invalid hashing algorithm');
+      }
+      digest = await crypto.digest({ name: shaAlgorithm }, new Uint8Array(signedDataBuffer));
+      let messageDigest = new ArrayBuffer(0);
+      const signedAttrs = cmsSignedSimp.signerInfos[0].signedAttrs;
+      for (let j = 0; signedAttrs && j < signedAttrs.attributes.length; j++) {
+        if (signedAttrs.attributes[j].type === '1.2.840.113549.1.9.4') {
+          messageDigest = signedAttrs.attributes[j].values[0].valueBlock.valueHex; break;
+        }
+      }
+      if (messageDigest.byteLength === 0) throw new Error("No signed attribute 'MessageDigest'");
+      const view1 = new Uint8Array(messageDigest), view2 = new Uint8Array(digest);
+      if (view1.length !== view2.length) throw new Error('Hash is not correct');
+      for (let i = 0; i < view1.length; i++) if (view1[i] !== view2[i]) throw new Error('Hash is not correct');
+
+      let certValues = cmsSignedSimp.certificates[0].subject.typesAndValues;
+      let certAssociation;
+      for (const tv of certValues) if (tv.type === '2.5.4.10') certAssociation = tv.value.getValue();
+      if (certAssociation === undefined) throw new Error('Assocation of certificate not set');
+      let associationName = certAssociation;
+      hashValue.value = [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, '0')).join('');
+      const makeStibcDialog = () => {
+        signingInfo.style.color = 'green';
+        signingInfo.innerText = document.body.classList.contains('lang-fr')
+          ? '✅ Ce tampon numérique a été vérifié !'
+          : '✅ This digital stamp was verified!';
+        signingInfo.appendChild(document.createElement('br'));
+        const tmpl = 'Society of Translators ';
+        const isFr = document.body.classList.contains('lang-fr');
+        const start = isFr ? "(Certifiée par l'" : '(Certified by the ';
+        const end = ')';
+        if (associationName.startsWith(tmpl)) {
+          signingInfo.appendChild(new Text(`${start}${isFr ? 'Société des traducteurs' : 'Society of Translators'}`));
+          signingInfo.appendChild(document.createElement('br'));
+          signingInfo.appendChild(new Text(`${associationName.substr(tmpl.length)}${end}`));
+        } else {
+          if (isFr && associationName === 'Association of Translators and Interpreters of Ontario')
+            associationName = "Association des traducteurs et interprètes de l'Ontario";
+          signingInfo.appendChild(new Text(`${start}${associationName}${end}`));
+        }
+      };
+      if (i === 0) {
+        let signatureDetails;
+        try {
+          signatureDetails = await api.post('/api/verify-document', { hash: hashValue.value, lang: document.body.classList.contains('lang-fr') ? 'fr' : '' });
+        } catch (e) {
+          throw new Error('SuperSigning.UserVisibleException: Cannot verify digital stamp: The connection to the server failed.');
+        }
+        const { TimeSigned: { Raw, Title }, Signer: { FullName, Email, MemberNumber, Association: Assoc }, DocumentDescription, LanguagePair } = signatureDetails;
+        associationName = Assoc.LongName;
+        makeStibcDialog();
+        signingInfo.appendChild(document.createElement('br'));
+        signingInfo.appendChild(document.createElement('br'));
+        if (!SUPPORTS_QR) {
+          signingInfo.appendChild(Object.assign(document.createElement('a'), {
+            innerText: document.body.classList.contains('lang-fr') ? 'Voir les détails' : 'View Details',
+            href: 'javascript:void(0)',
+            onclick: () => signingInfoDiv.style.display = '',
+          }));
+        }
+        if (viewable) {
+          signingInfo.appendChild(document.createElement('br'));
+          signingInfo.appendChild(Object.assign(document.createElement('a'), {
+            innerText: document.body.classList.contains('lang-fr') ? 'Voir le document' : 'View Document',
+            href: 'javascript:void(0)',
+            onclick: () => {
+              const blob = new Blob([buffer], { type: 'application/pdf' });
+              const url = URL.createObjectURL(blob);
+              window.open(url, '_blank');
+            },
+          }));
+        }
+        const div = signingInfoDetails;
+        div.parentElement.style.fontSize = '1rem';
+        if (!SUPPORTS_QR) div.parentElement.style.overflow = 'scroll';
+        const fr = document.body.classList.contains('lang-fr');
+        div.appendChild(Object.assign(document.createElement('u'), { innerText: fr ? 'Informations sur le document' : 'Document Info' }));
+        div.appendChild(document.createElement('br'));
+        div.appendChild(new Text(fr ? `Nom: ${DocumentDescription}` : `Name: ${DocumentDescription}`)); div.appendChild(document.createElement('br'));
+        div.appendChild(new Text(fr ? `Paire de langues: ${LanguagePair}` : `Language Pair: ${LanguagePair}`)); div.appendChild(document.createElement('br'));
+        div.appendChild(new Text(fr ? 'Date de tamponnage: ' : 'Date Stamped: '));
+        div.appendChild(Object.assign(document.createElement('span'), { innerText: Title, title: Raw }));
+        div.appendChild(document.createElement('br'));
+        div.appendChild(document.createElement('br'));
+        div.appendChild(Object.assign(document.createElement('u'), { innerText: fr ? 'Tamponné par' : 'Stamped By' }));
+        div.appendChild(document.createElement('br'));
+        div.appendChild(new Text(fr ? 'Nom: ' : 'Name: ')); div.appendChild(new Text(FullName)); div.appendChild(document.createElement('br'));
+        div.appendChild(new Text(fr ? 'Courriel: ' : 'Email: '));
+        div.appendChild(Object.assign(document.createElement('a'), { innerText: Email, href: `mailto:${Email}`, target: '_blank' }));
+        div.appendChild(document.createElement('br'));
+        div.appendChild(new Text(fr ? `Numéro de membre ${Assoc.Name}: ` : `${Assoc.Name} Member Number: `));
+        div.appendChild(new Text(MemberNumber));
+      } else makeStibcDialog();
+      return;
+    }
+    throw new Error('Signature verification failed');
+  } catch (e) { reportVerifyFailure(e); }
+}
+
+function reportVerifyFailure(e) {
+  console.error(e);
+  if (hashValue.value === '') api.post('/api/verify-document', { hash: '' }).catch(() => {});
+  hashValue.value = '';
+  signingInfo.style.color = 'red';
+  signingInfo.innerText = getErrorOrNull(e) ?? (document.body.classList.contains('lang-fr')
+    ? "❌ Le tampon numérique n'a pas pu être vérifié.\nNous vous invitons à contacter le traducteur."
+    : '❌ The digital stamp could not be verified.\nWe invite you to contact the translator.');
+}
+
+function checkDigitalSignature() {
+  signingInfo.innerText = '';
+  try {
+    const file = translationPackage.files[0];
+    const reader = new FileReader();
+    reader.onload = async () => { try { await checkDigitalSignatureInternal(reader.result); } catch (e) { reportErrorAlert(e); } };
+    reader.readAsArrayBuffer(file);
+  } catch (e) { reportErrorAlert(e); }
+}
+window.checkDigitalSignature = checkDigitalSignature;
+
+function padEncryptionKey(key) {
+  const out = new Uint8Array(32);
+  out.set(key.slice(0, Math.min(key.length, 32)));
+  return out;
+}
+
+async function decryptFile(encryptedFileBlob, base64Key) {
+  try {
+    const buf = await encryptedFileBlob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const magic = bytes.slice(0, 4);
+    const isArgon = magic[0] === 0x41 && magic[1] === 0x52 && magic[2] === 0x47 && magic[3] === 0x32;
+    let keyBytes, iv, ciphertext;
+    if (isArgon) {
+      const salt = bytes.slice(4, 20);
+      const saltB64 = btoa(String.fromCharCode.apply(null, salt));
+      const derivedB64 = await window.deriveKeyWithArgon2(base64Key, saltB64);
+      keyBytes = Uint8Array.from(atob(derivedB64), c => c.charCodeAt(0));
+      iv = bytes.slice(20, 36); ciphertext = bytes.slice(36);
+    } else {
+      keyBytes = padEncryptionKey(Uint8Array.from(atob(base64Key), c => c.charCodeAt(0)));
+      iv = bytes.slice(0, 16); ciphertext = bytes.slice(16);
+    }
+    const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CBC', length: 256 }, false, ['decrypt']);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, ciphertext);
+    return new Uint8Array(decrypted);
+  } catch (e) { console.error('Decryption failed:', e); return null; }
+}
+
+function performVerification() {
+  const pdfFile = translationPackage.files && translationPackage.files[0];
+  const verificationCode = SUPPORTS_QR ? certNumber.value.trim() : '';
+  if (pdfFile && verificationCode) {
+    signingInfo.style.color = 'red';
+    signingInfo.innerText = document.body.classList.contains('lang-fr')
+      ? 'Veuillez fournir soit un document PDF soit un code de vérification, pas les deux.'
+      : 'Please provide either a PDF document or a verification code, not both.';
+    return;
+  }
+  if (pdfFile) checkDigitalSignature();
+  else if (SUPPORTS_QR && verificationCode) checkQRCode(verificationCode);
+  else {
+    signingInfo.style.color = 'red';
+    signingInfo.innerText = document.body.classList.contains('lang-fr')
+      ? (SUPPORTS_QR ? 'Veuillez fournir soit un document PDF soit un code de vérification.' : 'Veuillez fournir un document PDF.')
+      : (SUPPORTS_QR ? 'Please provide either a PDF document or a verification code.' : 'Please provide a PDF document.');
+  }
+}
+window.performVerification = performVerification;
+
+async function checkQRCode(key) {
+  try {
+    const params = parseParameters(key);
+    if (!params) throw new Error('verify failed');
+    const [qrId, encryptionKey] = params;
+    const { downloadUrl } = await api.get(`/api/fetch-document?qrId=${encodeURIComponent(qrId)}`);
+    if (!downloadUrl) throw new Error('Download URL not found in response.');
+    const docResp = await fetch(downloadUrl);
+    if (!docResp.ok) throw new Error(`Failed to download document content from S3: ${docResp.status}`);
+    const encryptedFile = await docResp.blob();
+    const pdfBytes = await decryptFile(encryptedFile, encryptionKey);
+    if (!pdfBytes) throw new Error('Decryption failed.');
+    await checkDigitalSignatureInternal(pdfBytes, true);
+  } catch (e) {
+    if (key !== undefined) { signingInfoDetails.innerHTML = ''; reportVerifyFailure(e); }
+  }
+}
+window.checkQRCode = checkQRCode;
+</script>
+</body>
+</html>

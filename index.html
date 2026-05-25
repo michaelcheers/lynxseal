@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certify a Translation</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha256-YLGeXaapI0/5IgZopewRJcFXomhRMlYYjugPLSyNjTY=" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="/css/site.css">
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/site.js"></script>
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+
+<!-- pdf-lib + fontkit (pinned + SRI). Same CDN as the old Razor version. -->
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" integrity="sha256-D5pcrQeUHwgmWGyU4InYm5GMRuXBfPLVo8b2ZuO8aU8=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js" integrity="sha256-2N9WG5+6mOJPLlEw5AlIgJKBu7xVogxBI1nxoKXrNaY=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" integrity="sha256-eeyG+ChWAFsciHkFz8z8++w4Icphx/1alS+qX3ePeRw=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script src="/js/render-declaration.js?v=1.01"></script>
+<script src="/js/pdf-signing.js?v=1"></script>
+<script src="/js/argon2-init.js?v=1"></script>
+
+<!-- fflate — used by pdfjs-loader.js to extract the pdf.js release ZIP
+     client-side. See pdfjs-loader.js header for the audit story. -->
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js" integrity="sha256-Ri74BB/JcONhWiCp3SsuMEegc7Lacp708CtjS7qLe4M=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="/js/pdfjs-loader.js?v=1"></script>
+
+<style>
+  .popup-outer { position:fixed; top:0; left:0; width:100%; height:100%; overflow:hidden; z-index:999999; background:rgba(0,0,0,.5); }
+  .popup-inner { background:#fff; position:fixed; top:0; left:calc((100% - min(106.518vh, 100%)) / 2); width:min(106.518vh, 100%); height:100%; }
+  textarea { resize:auto; }
+  body:not(.lang-fr) .fr-only { display:none; }
+  body.lang-fr .en-only { display:none; }
+</style>
+</head>
+<body class="lang-en">
+
+<header style="background:#fff;border-bottom:1px solid #ddd;padding:8px 16px;display:flex;align-items:center;gap:16px;">
+  <a class="brand" href="/" style="font-weight:700">Lynxseal</a>
+  <div style="flex:1"></div>
+  <a href="#" id="langEn">EN</a>
+  <a href="#" id="langFr">FR</a>
+  <a href="/sign-out.html" id="signOutBtn"><span class="en-only">SIGN OUT</span><span class="fr-only">DÉCONNEXION</span></a>
+</header>
+
+<main id="mainContent" style="display:none">
+
+<div class="container" style="margin-top:2em">
+  <div class="row justify-content-center" style="height:80vh">
+    <div class="col-sm-6"><div class="card h-100"><div class="card-body">
+      <form id="pkgForm">
+
+        <!-- Language picker (QR-only feature, shown/hidden by JS after context loads) -->
+        <label class="form-group" id="declLangPicker" style="display:none">
+          <b><span class="en-only">Language</span><span class="fr-only">Langue</span></b><br>
+          <select style="margin-left:2em;width:calc(100% - 2em)" id="declarationLanguage" name="declarationLanguage" class="form-control">
+            <option selected value="English">English</option>
+            <option value="French">Français</option>
+          </select>
+        </label>
+
+        <label class="form-group">
+          <b><span class="en-only">Upload source document</span><span class="fr-only">Télécharger le document source</span></b><br>
+          <input type="file" class="form-control" style="margin-left:2em" name="original" id="originalDocument" required>
+          <label id="footerSpaceSourceLbl" style="margin-left:4em;margin-top:.5em;display:none">
+            <input type="checkbox" name="addFooterSpaceSource" id="addFooterSpaceSource">
+            <span class="en-only">Add Footer Space to source (prevents overlap with verification elements)</span>
+            <span class="fr-only">Ajouter un espace de pied de page à la source (empêche le chevauchement avec les éléments de vérification)</span>
+          </label>
+        </label>
+
+        <label class="form-group">
+          <b><span class="en-only">Upload translated document</span><span class="fr-only">Télécharger le document traduit</span></b><br>
+          <input type="file" class="form-control" style="margin-left:2em" name="translated" id="translatedDocument" required>
+          <label id="footerSpaceTargetLbl" style="margin-left:4em;margin-top:.5em;display:none">
+            <input type="checkbox" name="addFooterSpaceTarget" id="addFooterSpaceTarget">
+            <span class="en-only">Add Footer Space to target (prevents overlap with verification elements)</span>
+            <span class="fr-only">Ajouter un espace de pied de page à la cible (empêche le chevauchement avec les éléments de vérification)</span>
+          </label>
+        </label>
+
+        <label class="form-group">
+          <b><span class="en-only">Language Combination</span><span class="fr-only">Combinaison de langues</span></b><br>
+          <select style="margin-left:2em" name="langCombo" id="langCombo" class="form-control" required>
+            <option selected disabled value=""></option>
+          </select>
+        </label>
+
+        <label class="form-group">
+          <b><span class="en-only">Enter a title for your translation</span><span class="fr-only">Entrez un titre pour votre traduction</span></b>
+          <small>
+            <span class="en-only">(eg. <i>Birth Certificate for Lou McKinley</i>)</span>
+            <span class="fr-only">(ex. <i>Certificat de naissance pour Lou McKinley</i>)</span>
+          </small>
+          <textarea maxlength="256" style="margin-left:2em;box-sizing:border-box;width:100%" class="form-control" name="descr"></textarea>
+        </label>
+
+        <div class="form-group" id="stampingPrefBlock">
+          <b><span class="en-only">Stamping Preference</span><span class="fr-only">Préférence de tamponnage</span></b><br>
+          <div style="margin-left:2em;margin-top:.7rem">
+            <div>
+              <input id="stampDecl" name="stampingPref" value="firstPage" type="radio" checked>
+              <label for="stampDecl"><span class="en-only">Stamp declaration (first page only)</span><span class="fr-only">Tamponner la déclaration (première page seulement)</span></label>
+            </div>
+            <div>
+              <input id="stampPages" name="stampingPref" value="everyPage" type="radio">
+              <label for="stampPages"><span class="en-only">Stamp every page</span><span class="fr-only">Tamponner chaque page</span></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- ATIO-only stamp color picker -->
+        <label class="form-group" id="stampColorPicker" style="display:none">
+          <b><span class="en-only">Stamp Color</span><span class="fr-only">Couleur du tampon</span></b><br>
+          <select style="margin-left:2em;width:calc(100% - 2em)" class="form-control" name="StampColor">
+            <option class="en-only" value="#000000">Black</option><option class="fr-only" value="#000000">Noir</option>
+            <option class="en-only" value="#EE0000">Red</option><option class="fr-only" value="#EE0000">Rouge</option>
+            <option class="en-only" value="#418C2C">Green</option><option class="fr-only" value="#418C2C">Vert</option>
+            <option class="en-only" value="#2910C0">Blue</option><option class="fr-only" value="#2910C0">Bleu</option>
+            <option class="en-only" value="#7030A0">Purple</option><option class="fr-only" value="#7030A0">Violet</option>
+          </select>
+        </label>
+
+        <label class="form-group">
+          <b><span class="en-only">Declaration Customization</span><span class="fr-only">Personnalisation de la déclaration</span></b><br>
+          <select style="margin-left:2em;width:calc(100% - 2em)" id="declarationType" name="customization" class="form-control">
+            <option value="default" selected><span class="en-only">No Customization</span><span class="fr-only">Pas de personnalisation</span></option>
+            <option id="newProfileOpt" value="newProfile"><span class="en-only">+ New</span><span class="fr-only">+ Nouveau</span></option>
+          </select>
+          <div id="editOperationsDiv" style="display:none">
+            <button class="btn btn-info" type="button" id="editProfileBtn"><span class="en-only">Edit</span><span class="fr-only">Modifier</span></button>
+            <button class="btn btn-danger" type="button" id="deleteProfileBtn"><span class="en-only">Delete</span><span class="fr-only">Supprimer</span></button>
+          </div>
+        </label>
+
+        <button class="btn btn-primary" type="submit">
+          <span class="en-only">Start Digital Stamping Process</span>
+          <span class="fr-only">Démarrer le processus de tamponnage numérique</span>
+        </button>
+      </form>
+
+      <div id="popup" style="display:none">
+        <br>
+        <div id="mainProgressMsg"></div>
+        <progress id="progressBar"></progress>
+        <div id="specificProgressMsg"></div>
+      </div>
+    </div></div></div>
+
+    <div class="col-sm-6" style="display:none" id="pdfPreviewerDiv"><div class="card h-100"><div class="card-body">
+      <iframe id="pdfCard" style="width:100%;height:100%"></iframe>
+    </div></div></div>
+  </div>
+</div>
+
+<div id="profileEditDlg" class="popup-outer" style="display:none">
+  <div class="popup-inner" style="overflow:scroll">
+    <div class="container-fluid">
+      <h1 style="text-align:center"><span class="en-only">Edit Declaration Customization</span><span class="fr-only">Modifier la personnalisation de la déclaration</span></h1>
+      <div class="row">
+        <div class="col-sm-6"><div class="card h-100"><div class="card-body">
+          <form id="profileEditForm" style="margin-left:30px;margin-right:30px">
+            <input type="hidden" id="editingId" name="Id" value="">
+            <label class="form-group">
+              <b><span class="en-only">Profile Name</span><span class="fr-only">Nom du profil</span></b><br>
+              <input type="text" class="form-control" name="ProfileName" maxlength="256" required>
+            </label><br>
+            <label class="form-group">
+              <b><span class="en-only">Logo</span><span class="fr-only">Logo</span></b><br>
+              <div style="margin-left:2em;margin-top:.7rem">
+                <div>
+                  <input type="radio" name="LogoType" value="None" id="noLogoSelector">
+                  <label for="noLogoSelector"><span class="en-only">No Logo</span><span class="fr-only">Pas de logo</span></label>
+                </div>
+                <div>
+                  <input type="radio" name="LogoType" value="STIBC" id="stibcSelector" checked>
+                  <label for="stibcSelector"><span id="stibcLogoLabel">Default</span> <span class="en-only">Logo</span><span class="fr-only">Logo</span></label>
+                </div>
+                <div id="existingLogoSelector">
+                  <input type="radio" name="LogoType" value="existing" id="existingSelector">
+                  <label for="existingSelector"><span class="en-only">Existing Logo</span><span class="fr-only">Logo existant</span></label>
+                </div>
+                <div>
+                  <input type="radio" name="LogoType" value="Custom" id="customSelector">
+                  <label for="customSelector"><span class="en-only">Custom Logo</span><span class="fr-only">Logo personnalisé</span></label>
+                  <input type="file" class="form-control" name="Logo" accept=".png,.jpg,.jpeg,.webp,.bmp">
+                </div>
+              </div>
+              <style>
+                input[name=LogoType][value=Custom]:not(:checked) + label + input[name=Logo] { display:none; }
+              </style>
+            </label><br>
+            <label class="form-group" id="signatureSection" style="display:none">
+              <b><span class="en-only">Signature</span><span class="fr-only">Signature</span></b><br>
+              <div style="margin-left:2em;margin-top:.7rem">
+                <div>
+                  <input type="radio" name="SignatureType" value="None" id="noSignatureSelector" checked>
+                  <label for="noSignatureSelector"><span class="en-only">No Signature</span><span class="fr-only">Pas de signature</span></label>
+                </div>
+                <div id="existingSignatureSelector">
+                  <input type="radio" name="SignatureType" value="existing" id="existingSignatureSelectorRadio">
+                  <label for="existingSignatureSelectorRadio"><span class="en-only">Existing Signature</span><span class="fr-only">Signature existante</span></label>
+                </div>
+                <div>
+                  <input type="radio" name="SignatureType" value="Custom" id="customSignatureSelector">
+                  <label for="customSignatureSelector"><span class="en-only">Custom Signature</span><span class="fr-only">Signature personnalisée</span></label>
+                  <input type="file" class="form-control" name="Signature" accept=".png,.jpg,.jpeg,.webp,.bmp">
+                </div>
+              </div>
+              <style>
+                input[name=SignatureType][value=Custom]:not(:checked) + label + input[name=Signature] { display:none; }
+                input[name=SignatureType][value=existing]:not(:checked) ~ #existingSignatureSelector { display:none; }
+              </style>
+            </label><br>
+            <label class="form-group">
+              <b><span class="en-only">Contact Info</span><span class="fr-only">Coordonnées</span></b><br>
+              <textarea class="form-control" name="ContactInfo" maxlength="1024" style="width:20rem;height:15em"></textarea>
+            </label><br>
+            <label class="form-group">
+              <b><span class="en-only">Credential Info</span><span class="fr-only">Informations d'accréditation</span></b><br>
+              <textarea class="form-control" name="CredentialInfo" maxlength="1024" style="width:20rem;height:15em" id="credentialInfoTextarea"></textarea>
+            </label><br>
+            <br><button style="float:left" class="btn btn-primary" type="button" id="cancelProfileBtn"><span class="en-only">Cancel</span><span class="fr-only">Annuler</span></button>
+            <button style="float:right" class="btn btn-primary" type="submit"><span class="en-only">Save</span><span class="fr-only">Enregistrer</span></button>
+          </form>
+        </div></div></div>
+        <div class="col-sm-6"><div class="card h-100"><div class="card-body">
+          <iframe id="customizationPreview" style="width:100%;height:100%"></iframe>
+        </div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalDlg" class="popup-outer" style="display:none">
+  <div class="popup-inner">
+    <div style="margin-left:30px;margin-right:30px;max-height:5em">
+      <h1>Stamp</h1>
+      <span class="modal-message">Make sure the stamps are visible and not blocking any content on each page.</span>
+    </div>
+    <iframe name="pdfFrame" style="width:100%;height:calc(100% - 10em);margin-top:1em"></iframe>
+    <iframe name="stampedPdfFrame" style="width:100%;height:calc(100% - 10em);margin-top:1em;display:none"></iframe>
+    <div name="stampedPdfFramePlaceholder" style="width:100%;height:calc(100% - 10em);margin-top:1em;display:none;border:1px solid black">
+      <div><span class="en-only">Preview is loading...</span><span class="fr-only">Chargement de l'aperçu...</span></div>
+    </div>
+    <div name="postStamping" style="width:calc(100% - 30px);height:calc(100% - 10em);margin-top:1em;display:none;border:1px solid black;margin-left:30px;margin-right:30px;clear:both">
+      <progress name="progressBar"></progress>
+      <div name="progressMsg"></div>
+    </div>
+    <div name="stampButtons" style="display:none;margin-right:30px;margin-left:30px">
+      <br>
+      <button style="float:left" class="btn btn-primary" name="backButton"><span class="en-only">Back</span><span class="fr-only">Retour</span></button>
+      <button style="float:right" class="btn btn-primary" name="continueButton"><span class="en-only">Continue</span><span class="fr-only">Continuer</span></button>
+    </div>
+  </div>
+</div>
+
+<form style="display:none" id="fetchForm" method="POST"></form>
+
+</main>
+
+<script src="/js/index-page.js?v=1"></script>
+</body>
+</html>

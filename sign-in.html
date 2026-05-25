@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign In</title>
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Lynxseal</a>
+  <div class="spacer"></div>
+  <a href="?lang=en" id="enBtn">EN</a>
+  <a href="?lang=fr" id="frBtn">FR</a>
+</header>
+<main>
+<div class="col-md-8 mx-auto" id="signinShell">
+  <h2 style="text-align:center">
+    <span class="en-only">Digital Stamp Sign In</span>
+    <span class="fr-only">Connexion au tampon numérique</span>
+  </h2>
+
+  <!-- Step 1: credentials -->
+  <form id="credForm" autocomplete="on">
+    <div class="form-group">
+      <label for="usernameI"><span class="en-only">Email or Phone Number</span><span class="fr-only">Courriel ou numéro de téléphone</span></label>
+      <input id="usernameI" name="emailOrPhoneNumber" class="form-control" required
+        pattern="^([a-zA-Z0-9!#$%&amp;'*+/=?^_`{|}~.-]+@[a-zA-Z0-9.-]+|(\+1 ?)?\(?[0-9]{3}\)?[- ]?[0-9]{3}[- ]?[0-9]{4})$">
+    </div>
+    <div class="form-group">
+      <label for="passwordI"><span class="en-only">Password</span><span class="fr-only">Mot de passe</span></label>
+      <input id="passwordI" name="password" type="password" class="form-control" required
+        pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{8,}$">
+    </div>
+    <div class="form-group">
+      <input type="checkbox" id="rememberMe" name="rememberMe">
+      <label for="rememberMe" style="display:inline">
+        <span class="en-only">Remember Me</span><span class="fr-only">Se souvenir de moi</span>
+      </label>
+    </div>
+    <div id="badSignin" class="alert alert-danger" style="display:none">
+      <span class="en-only">Email-password combination not recognized.</span>
+      <span class="fr-only">Combinaison courriel/mot de passe non reconnue.</span>
+      <a href="/reset-password.html">
+        <span class="en-only">Forgot password</span><span class="fr-only">Mot de passe oublié</span>
+      </a>?
+    </div>
+    <div class="form-group">
+      <a href="/reset-password.html">
+        <span class="en-only">Forgot Password</span><span class="fr-only">Mot de passe oublié</span>
+      </a>
+    </div>
+    <button class="btn btn-primary" type="submit">
+      <span class="en-only">Sign In</span><span class="fr-only">Se connecter</span>
+    </button>
+  </form>
+
+  <!-- Step 2: choose verification method (only shown for new devices when both options are available) -->
+  <form id="verifyMethodForm" style="display:none">
+    <div class="form-group">
+      <b><span class="en-only">Choose a verification method</span><span class="fr-only">Choisir une méthode de vérification</span></b>
+      <div style="margin-left:2em;margin-top:.7rem">
+        <div>
+          <input id="vmEmail" name="verificationMethod" value="email" type="radio" checked>
+          <label for="vmEmail" style="display:inline">
+            <span class="en-only">Send me an email with a verification code</span>
+            <span class="fr-only">Envoyer un courriel avec un code de vérification</span>
+          </label>
+        </div>
+        <div>
+          <input id="vmSms" name="verificationMethod" value="sms" type="radio">
+          <label for="vmSms" style="display:inline">
+            <span class="en-only">Send me a text message with a verification code</span>
+            <span class="fr-only">Envoyer un texto avec un code de vérification</span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">
+      <span class="en-only">Continue</span><span class="fr-only">Continuer</span>
+    </button>
+  </form>
+
+  <!-- Step 3: email sent confirmation -->
+  <div id="emailSentMsg" style="display:none">
+    <span class="en-only">Click the link sent to your email address from <strong id="emailSentFrom"></strong> to complete the login process.</span>
+    <span class="fr-only">Cliquez sur le lien envoyé à votre adresse courriel à partir de <strong id="emailSentFromFr"></strong> pour terminer la connexion.</span>
+    <br>
+    <span class="en-only">If you don't receive an email within two hours, contact us at <a href="mailto:office@stibc.org">office@stibc.org</a>.</span>
+    <span class="fr-only">Si vous ne recevez pas de courriel dans les deux heures, contactez-nous à <a href="mailto:office@stibc.org">office@stibc.org</a>.</span>
+  </div>
+</div>
+</main>
+<script>
+const qs = new URLSearchParams(location.search);
+
+// Language toggle (cookie + body class) — mirrors the existing site.
+function applyLang(lang) {
+  document.body.classList.toggle('lang-fr', lang === 'fr');
+  document.body.classList.toggle('lang-en', lang !== 'fr');
+  localStorage.setItem('lang', lang);
+}
+applyLang(qs.get('lang') || localStorage.getItem('lang') || 'en');
+document.getElementById('enBtn').addEventListener('click', e => { e.preventDefault(); applyLang('en'); });
+document.getElementById('frBtn').addEventListener('click', e => { e.preventDefault(); applyLang('fr'); });
+
+// Pre-fill bad-signin alert if previous attempt failed and the page was reloaded with ?bad-signin.
+if (qs.has('bad-signin')) {
+  document.getElementById('badSignin').style.display = '';
+  history.replaceState(null, '', location.pathname);
+}
+
+let pendingCreds = null;
+
+document.getElementById('credForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  document.getElementById('badSignin').style.display = 'none';
+  const fd = new FormData(e.target);
+  pendingCreds = {
+    emailOrPhoneNumber: fd.get('emailOrPhoneNumber'),
+    password: fd.get('password'),
+    rememberMe: fd.get('rememberMe') === 'on',
+    next: qs.get('next') || '/',
+  };
+  await submitSignIn(pendingCreds);
+});
+
+document.getElementById('verifyMethodForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  await submitSignIn({ ...pendingCreds, verificationMethod: fd.get('verificationMethod') });
+});
+
+async function submitSignIn(body) {
+  let res;
+  try {
+    res = await api.post('/api/sign-in', body, { noAutoRedirect: true });
+  } catch (e) {
+    alert((e.message || 'Sign-in failed') + (e.body ? '\n' + e.body : ''));
+    return;
+  }
+  if (res.error === 'bad-signin') {
+    document.getElementById('badSignin').style.display = '';
+    return;
+  }
+  if (res.needsVerification === 'email') {
+    document.getElementById('credForm').style.display = 'none';
+    document.getElementById('verifyMethodForm').style.display = 'none';
+    document.getElementById('emailSentMsg').style.display = '';
+    document.getElementById('emailSentFrom').textContent = res.emailSentFrom || '';
+    document.getElementById('emailSentFromFr').textContent = res.emailSentFrom || '';
+    return;
+  }
+  if (res.needsVerification === 'sms') {
+    location.href = '/verify-otp-code.html?id=' + encodeURIComponent(res.otpId);
+    return;
+  }
+  if (res.ok) {
+    // Hand the token to the outer wrapper so it persists in this-origin
+    // localStorage (per-tenant), and so other tabs of this wrapper origin
+    // pick it up via the BroadcastChannel.
+    if (res.token) window.PortalBridge.setAuth(res.token, !!res.isAdmin);
+    location.href = res.redirectTo || '/';
+    return;
+  }
+  alert('Unexpected sign-in response: ' + JSON.stringify(res));
+}
+</script>
+</body>
+</html>

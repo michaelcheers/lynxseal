@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Signing out</title>
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+</head>
+<body>
+<main><p style="padding:2em">Signing out…</p></main>
+<script>
+(async () => {
+  // Bearer-token sign-out is purely client-side: drop the token. We still
+  // hit /api/sign-out to clear the legacy cookie in case the user had one.
+  try { await api.post('/api/sign-out', {}); } catch {}
+  if (window.PortalBridge) window.PortalBridge.clearAuth();
+  location.href = '/sign-in.html';
+})();
+</script>
+</body>
+</html>

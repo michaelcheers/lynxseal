@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analytics</title>
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha256-SERKgtTty1vsDxll+qzd4Y2cF9swY9BCq62i9wXJ9Uo=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+<div id="app" style="display:none">
+    <nav>
+        <div class="nav-left">
+            <h1>Analytics</h1>
+        </div>
+        <div class="nav-right">
+            <div class="date-range">
+                <button class="range-btn" data-range="7d">7D</button>
+                <button class="range-btn" data-range="30d">30D</button>
+                <button class="range-btn" data-range="90d">90D</button>
+                <button class="range-btn active" data-range="12m">12M</button>
+                <button class="range-btn" data-range="all">All</button>
+                <span class="divider"></span>
+                <input type="date" id="customStart" title="Custom start">
+                <span class="to">to</span>
+                <input type="date" id="customEnd" title="Custom end">
+                <span class="divider"></span>
+                <button class="print-btn" id="printReport">Print Report</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="print-report-header" style="display:none;">
+        <h1>E-Stamp Analytics Report</h1>
+        <span class="print-date" id="printDate"></span>
+    </div>
+
+    <main>
+        <section class="metrics">
+            <div class="metric">
+                <span class="metric-value" id="metricDocs">-</span>
+                <span class="metric-label">Documents</span>
+            </div>
+            <div class="metric">
+                <span class="metric-value" id="metricSigners">-</span>
+                <span class="metric-label">Stampers</span>
+            </div>
+            <div class="metric">
+                <span class="metric-value" id="metricLogins">-</span>
+                <span class="metric-label">Logins</span>
+            </div>
+            <div class="metric">
+                <span class="metric-value" id="metricLoginUsers">-</span>
+                <span class="metric-label">Login Users</span>
+            </div>
+        </section>
+
+        <section class="main-chart">
+            <div class="chart-header">
+                <h2 class="chart-title" id="chartTitle"></h2>
+                <div class="chart-controls">
+                    <div class="granularity">
+                        <button class="gran-btn" data-gran="day">Daily</button>
+                        <button class="gran-btn active" data-gran="week">Weekly</button>
+                        <button class="gran-btn" data-gran="month">Monthly</button>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-area">
+                <canvas id="mainChart"></canvas>
+            </div>
+        </section>
+
+        <section class="panels">
+            <div class="panel">
+                <h2>Top Users</h2>
+                <div class="panel-content">
+                    <table id="usersTable"></table>
+                </div>
+            </div>
+            <div class="panel">
+                <h2>Language Pairs</h2>
+                <div class="panel-content">
+                    <table id="langsTable"></table>
+                </div>
+            </div>
+        </section>
+
+        <section class="pie-section">
+            <div class="panel">
+                <h2>Language Pairs Distribution</h2>
+                <div class="pie-chart-area">
+                    <canvas id="langPieChart"></canvas>
+                </div>
+                <div class="pie-print-legend" style="display:none;" id="piePrintLegend"></div>
+            </div>
+        </section>
+
+        <section class="verification-section">
+            <h2 class="section-heading">Verification Tool</h2>
+            <p class="section-note">Only counts verification attempts on or after April 5, 2026. Numbers may appear unusual due to bots or other automated traffic as this is a public endpoint.</p>
+            <div class="metrics verification-metrics">
+                <div class="metric">
+                    <span class="metric-value" id="metricVerifications">-</span>
+                    <span class="metric-label">Verifications</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value" id="metricUniqueVerifications">-</span>
+                    <span class="metric-label">Unique Documents Verified</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value" id="metricVerAttempts">-</span>
+                    <span class="metric-label">Verification Attempts</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value" id="metricVerNotFound">-</span>
+                    <span class="metric-label">Not Found</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value" id="metricVerRate">-</span>
+                    <span class="metric-label">Success Rate</span>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="chart-header">
+                    <h2 class="chart-title verification-chart-title" id="verChartTitle"></h2>
+                    <div class="chart-controls">
+                        <div class="granularity">
+                            <button class="ver-gran-btn" data-gran="day">Daily</button>
+                            <button class="ver-gran-btn active" data-gran="week">Weekly</button>
+                            <button class="ver-gran-btn" data-gran="month">Monthly</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-area verification-chart-area">
+                    <canvas id="verChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="raw-data">
+            <div class="raw-header">
+                <h2>Documents</h2>
+                <span class="raw-count" id="rawCount">0 records</span>
+            </div>
+            <div class="raw-table-wrap">
+                <table class="raw-table" id="rawTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Member</th>
+                            <th>Member #</th>
+                            <th>Language Pair</th>
+                            <th>Times Verified</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="raw-footer" id="rawFooter">
+                <button id="loadAll">Load all</button>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div id="bootMsg" style="padding:2em;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#666">Loading…</div>
+
+<style>
+:root {
+    /* Inter via Google Fonts deliberately not loaded — adds an unverifiable
+       CDN dep + DNS hit. System fonts look fine for an internal admin page. */
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e5e5e5;
+    --text: #171717;
+    --text-secondary: #737373;
+    --accent: #2563eb;
+    --accent-light: rgba(37, 99, 235, 0.1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+#app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.nav-left h1 { font-size: 18px; font-weight: 600; }
+
+.date-range { display: flex; align-items: center; gap: 4px; }
+
+.range-btn {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.range-btn:hover { border-color: var(--text-secondary); color: var(--text); }
+.range-btn.active { background: var(--text); border-color: var(--text); color: white; }
+
+.divider { width: 1px; height: 20px; background: var(--border); margin: 0 12px; }
+
+.date-range input {
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: var(--font);
+    color: var(--text);
+}
+.date-range .to { color: var(--text-secondary); font-size: 13px; margin: 0 6px; }
+
+.print-btn {
+    height: 32px;
+    padding: 0 16px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: white;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.print-btn:hover { background: #1d4ed8; border-color: #1d4ed8; }
+
+main {
+    flex: 1;
+    padding: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.metrics { display: flex; gap: 24px; margin-bottom: 32px; }
+
+.metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.metric-value { font-size: 42px; font-weight: 700; letter-spacing: -1px; line-height: 1; margin-bottom: 8px; }
+.metric-label { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
+
+.main-chart {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 32px;
+    overflow: hidden;
+}
+
+.chart-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.chart-title { font-size: 15px; font-weight: 600; display: none; }
+.chart-controls { display: flex; justify-content: flex-end; margin-left: auto; }
+
+.granularity { display: flex; background: var(--bg); border-radius: 8px; padding: 3px; }
+.gran-btn {
+    height: 30px;
+    padding: 0 14px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.gran-btn:hover { color: var(--text); }
+.gran-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+.chart-area { padding: 24px; height: 400px; }
+.chart-area canvas { width: 100% !important; height: 100% !important; }
+
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+.panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.panel h2 { font-size: 15px; font-weight: 600; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+.panel-content { max-height: 400px; overflow-y: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+table tr { border-bottom: 1px solid var(--border); }
+table tr:last-child { border-bottom: none; }
+table td { padding: 14px 24px; font-size: 14px; }
+table td:first-child { font-weight: 500; }
+table td:last-child { text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+table tr:hover { background: var(--bg); }
+
+.bar-cell { display: flex; align-items: center; gap: 12px; }
+.bar { height: 8px; background: var(--accent-light); border-radius: 4px; flex: 1; max-width: 120px; }
+.bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+
+.pie-section { margin-top: 32px; }
+.pie-section .panel { max-width: 100%; }
+.pie-chart-area { padding: 24px; height: 300px; }
+.pie-chart-area canvas { width: 100% !important; height: 100% !important; }
+
+.raw-data {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-top: 32px;
+    overflow: hidden;
+}
+.raw-header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.raw-header h2 { font-size: 15px; font-weight: 600; }
+.raw-count { font-size: 13px; color: var(--text-secondary); }
+.raw-table-wrap { overflow-x: auto; }
+.raw-table { width: 100%; border-collapse: collapse; }
+.raw-table th {
+    text-align: left;
+    padding: 12px 24px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+}
+.raw-table td { padding: 12px 24px; font-size: 14px; border-bottom: 1px solid var(--border); }
+.raw-table tbody tr:hover { background: var(--bg); }
+.raw-table .date-col { color: var(--text-secondary); white-space: nowrap; }
+.raw-table .lang-col { font-family: monospace; font-size: 13px; }
+
+.raw-footer { padding: 16px 24px; text-align: center; border-top: 1px solid var(--border); }
+.raw-footer button {
+    padding: 10px 24px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.raw-footer button:hover { background: var(--bg); border-color: var(--text-secondary); }
+.raw-footer.hidden { display: none; }
+
+.verification-section { margin-top: 48px; padding-top: 32px; border-top: 2px solid var(--border); }
+.section-heading { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.section-note { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
+.verification-metrics { margin-bottom: 24px; }
+.verification-chart-area { height: 300px; }
+.verification-chart-title { display: none; }
+.ver-gran-btn {
+    height: 30px;
+    padding: 0 14px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.ver-gran-btn:hover { color: var(--text); }
+.ver-gran-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+.print-chart-img { display: none; }
+
+@media (max-width: 1000px) {
+    .panels { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 800px) {
+    nav { padding: 16px; height: auto; flex-direction: column; gap: 16px; align-items: stretch; }
+    .date-range { flex-wrap: wrap; justify-content: center; }
+    main { padding: 16px; }
+    .metrics { flex-direction: column; }
+    .chart-area { height: 300px; }
+}
+
+@media print {
+    @page { size: landscape; margin: 1cm; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+    * { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+    .panel-content, .raw-table-wrap { overflow: visible !important; max-height: none !important; }
+    html, body { background: white !important; font-size: 12px; }
+    #app { min-height: auto; }
+    nav { display: none !important; }
+    main { padding: 0; max-width: none; }
+    .print-report-header { display: block !important; text-align: center; padding: 16px 0 8px; border-bottom: 2px solid #171717; margin-bottom: 24px; }
+    .print-report-header h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .print-report-header .print-date { font-size: 12px; color: #737373; }
+    .metrics { display: flex; flex-direction: row; gap: 12px; margin-bottom: 24px; page-break-inside: avoid; }
+    .metric { padding: 16px; border: 1px solid #ccc; }
+    .metric-value { font-size: 28px; }
+    .main-chart { page-break-inside: avoid; margin-bottom: 24px; }
+    .chart-title { display: block !important; font-size: 14px; font-weight: 600; }
+    .chart-header { border-bottom: none; padding: 12px 24px 0; }
+    .chart-controls { display: none; }
+    .chart-area { height: 250px; width: 100%; }
+    .chart-area .print-chart-img { width: 100% !important; height: auto !important; }
+    .panels .panel:first-child { display: none !important; }
+    .panels { display: block; }
+    .panel { page-break-inside: avoid; margin-bottom: 24px; border: 1px solid #ccc; }
+    .panel-content { max-height: none !important; overflow: visible !important; }
+    .raw-table-wrap { overflow: visible !important; }
+    .main-chart, .panel, .raw-data { overflow: visible !important; }
+    .pie-section { page-break-before: always; page-break-inside: avoid; }
+    .pie-chart-area { height: auto; min-height: auto; display: flex; align-items: flex-start; justify-content: center; }
+    .pie-chart-area .print-chart-img { width: 400px !important; height: 400px !important; }
+    .pie-print-legend { display: block !important; padding: 0 24px 16px; }
+    .pie-print-legend table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .pie-print-legend td { padding: 4px 8px; vertical-align: middle; }
+    .pie-print-legend .legend-color { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .pie-print-legend .legend-label { font-weight: 500; }
+    .pie-print-legend .legend-count { text-align: right; color: #737373; font-variant-numeric: tabular-nums; }
+    .chart-area canvas, .pie-chart-area canvas { display: none !important; }
+    .chart-area .print-chart-img, .pie-chart-area .print-chart-img { display: block !important; max-width: 100%; height: auto; margin: 0 auto; }
+    .raw-data { page-break-before: always; border: 1px solid #ccc; }
+    .raw-footer { display: none; }
+    .raw-table th { background: #f5f5f5 !important; }
+    .raw-table tr { page-break-inside: avoid; }
+    .verification-section { page-break-before: always; border-top: none; margin-top: 0; padding-top: 0; }
+    .section-heading { font-size: 16px; margin-bottom: 16px; }
+    .verification-chart-title { display: block !important; font-size: 14px; }
+    .verification-chart-area { height: 200px; }
+    .verification-chart-area canvas { display: none !important; }
+    .verification-chart-area .print-chart-img { display: block !important; max-width: 100%; height: auto; margin: 0 auto; }
+    .ver-gran-btn { display: none; }
+    button, input { display: none; }
+    .panel h2, .raw-header h2, .section-heading { font-size: 14px; }
+}
+</style>
+
+<script>
+(async () => {
+    // Fetch dashboard data from the API (the Razor version baked it into the
+    // page via @Html.Raw(Model.DocumentsJson) etc; we go through /api instead).
+    let s;
+    try {
+        s = await api.get('/api/admin/stats');
+    } catch (e) {
+        document.getElementById('bootMsg').innerHTML = '<p style="color:#900">Failed to load stats: ' + (e.message || e) + '</p>';
+        return;
+    }
+
+    const normalizeDate = d => d.endsWith('Z') || d.includes('+') ? d : d + 'Z';
+    const rawDocs = s.documents.map(d => ({ ...d, date: normalizeDate(d.date) }));
+    const rawLogins = s.logins.map(d => ({ ...d, date: normalizeDate(d.date) }));
+    const rawVerifications = s.verifications.map(d => ({ ...d, date: normalizeDate(d.date) }));
+    const timeZone = s.timeZoneId;
+
+    document.getElementById('bootMsg').remove();
+    document.getElementById('app').style.display = '';
+
+    // State
+    let range = '12m';
+    let granularity = 'week';
+    let verGranularity = 'week';
+    let customStart = null;
+    let customEnd = null;
+    let mainChart = null;
+    let pieChart = null;
+    let verChart = null;
+    let rawDisplayCount = 50;
+    const RAW_PAGE_SIZE = 50;
+
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => document.querySelectorAll(sel);
+
+    function setupEventListeners() {
+        $$('.range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('.range-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                range = btn.dataset.range;
+                customStart = customEnd = null;
+                $('#customStart').value = '';
+                $('#customEnd').value = '';
+                update();
+            });
+        });
+
+        $$('.gran-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('.gran-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                granularity = btn.dataset.gran;
+                update();
+            });
+        });
+
+        $$('.ver-gran-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('.ver-gran-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                verGranularity = btn.dataset.gran;
+                updateVerification(filterData(rawVerifications));
+            });
+        });
+
+        $('#customStart').addEventListener('change', handleCustomDate);
+        $('#customEnd').addEventListener('change', handleCustomDate);
+
+        $('#loadAll').addEventListener('click', () => {
+            rawDisplayCount = Infinity;
+            updateRawTable(filterData(rawDocs));
+        });
+
+        $('#printReport').addEventListener('click', () => {
+            window.dispatchEvent(new Event('beforeprint'));
+            setTimeout(() => window.print(), 100);
+        });
+    }
+
+    function handleCustomDate() {
+        const start = $('#customStart').value;
+        const end = $('#customEnd').value;
+        if (start || end) {
+            customStart = start || null;
+            customEnd = end || null;
+            $$('.range-btn').forEach(b => b.classList.remove('active'));
+            update();
+        }
+    }
+
+    function setupChart() {
+        Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        Chart.defaults.font.size = 12;
+        Chart.defaults.color = '#737373';
+
+        mainChart = new Chart($('#mainChart').getContext('2d'), {
+            type: 'line',
+            data: { labels: [], datasets: [{
+                label: 'Documents', data: [],
+                borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.05)',
+                fill: true, tension: 0.3, borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 5,
+                pointHoverBackgroundColor: '#2563eb', pointHoverBorderColor: '#fff', pointHoverBorderWidth: 2,
+            }] },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: '#171717', titleFont: { weight: '600', size: 13 }, bodyFont: { size: 13 }, padding: 12, cornerRadius: 8, displayColors: false },
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { maxTicksLimit: 12, padding: 8 }, border: { display: false } },
+                    y: { beginAtZero: true, grid: { color: '#f5f5f5' }, ticks: { maxTicksLimit: 6, padding: 12 }, border: { display: false } },
+                },
+            },
+        });
+
+        pieChart = new Chart($('#langPieChart').getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: [], datasets: [{
+                data: [],
+                backgroundColor: ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#0891b2', '#4f46e5', '#c026d3', '#d97706', '#059669'],
+                borderWidth: 0,
+            }] },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: {
+                    legend: { position: 'right', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle' } },
+                    tooltip: { backgroundColor: '#171717', titleFont: { weight: '600', size: 13 }, bodyFont: { size: 13 }, padding: 12, cornerRadius: 8 },
+                },
+            },
+        });
+
+        verChart = new Chart($('#verChart').getContext('2d'), {
+            type: 'bar',
+            data: { labels: [], datasets: [
+                { label: 'Found', data: [], backgroundColor: '#16a34a', borderRadius: 4 },
+                { label: 'Not Found', data: [], backgroundColor: '#dc2626', borderRadius: 4 },
+            ] },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: true, position: 'top', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle' } },
+                    tooltip: { backgroundColor: '#171717', titleFont: { weight: '600', size: 13 }, bodyFont: { size: 13 }, padding: 12, cornerRadius: 8 },
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 12, padding: 8 }, border: { display: false } },
+                    y: { stacked: true, beginAtZero: true, grid: { color: '#f5f5f5' }, ticks: { maxTicksLimit: 6, padding: 12 }, border: { display: false } },
+                },
+            },
+        });
+    }
+
+    function getDateRange() {
+        const now = new Date();
+        let start = null;
+
+        const tzToUTC = (dateStr, timeStr) => {
+            const noonUTC = new Date(`${dateStr}T12:00:00Z`);
+            const noonLocalStr = noonUTC.toLocaleString('sv-SE', { timeZone });
+            const noonLocalAsUTC = new Date(noonLocalStr.replace(' ', 'T') + 'Z');
+            const offsetMs = noonUTC.getTime() - noonLocalAsUTC.getTime();
+            const requestedUTC = new Date(`${dateStr}T${timeStr}Z`);
+            return new Date(requestedUTC.getTime() + offsetMs);
+        };
+
+        if (customStart || customEnd) {
+            return { start: customStart ? tzToUTC(customStart, '00:00:00') : null, end: customEnd ? tzToUTC(customEnd, '23:59:59') : null };
+        }
+
+        const todayInTz = now.toLocaleDateString('sv-SE', { timeZone });
+
+        switch (range) {
+            case '7d': { const d = new Date(todayInTz + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 6); start = tzToUTC(d.toISOString().slice(0, 10), '00:00:00'); break; }
+            case '30d': { const d = new Date(todayInTz + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 29); start = tzToUTC(d.toISOString().slice(0, 10), '00:00:00'); break; }
+            case '90d': { const d = new Date(todayInTz + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 89); start = tzToUTC(d.toISOString().slice(0, 10), '00:00:00'); break; }
+            case '12m': { const d = new Date(todayInTz + 'T12:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() - 1); start = tzToUTC(d.toISOString().slice(0, 10), '00:00:00'); break; }
+            case 'all': start = null; break;
+        }
+
+        const end = tzToUTC(todayInTz, '23:59:59');
+        return { start, end };
+    }
+
+    function filterData(data) {
+        const { start, end } = getDateRange();
+        return data.filter(d => {
+            const date = new Date(d.date);
+            if (start && date < start) return false;
+            if (end && date > end) return false;
+            return true;
+        });
+    }
+
+    function groupByPeriod(data, gran) {
+        gran = gran || granularity;
+        const groups = {};
+        data.forEach(d => {
+            const date = new Date(d.date);
+            let key;
+            if (gran === 'day') {
+                key = date.toLocaleDateString('sv-SE', { timeZone }).slice(0, 10);
+            } else if (gran === 'week') {
+                const localStr = date.toLocaleDateString('sv-SE', { timeZone });
+                const localDate = new Date(localStr + 'T12:00:00Z');
+                const day = localDate.getUTCDay();
+                const monday = new Date(localDate);
+                monday.setUTCDate(localDate.getUTCDate() - (day === 0 ? 6 : day - 1));
+                key = monday.toISOString().slice(0, 10);
+            } else {
+                key = date.toLocaleDateString('sv-SE', { timeZone }).slice(0, 7);
+            }
+            groups[key] = (groups[key] || 0) + 1;
+        });
+        return groups;
+    }
+
+    function formatPeriodLabel(key, gran) {
+        gran = gran || granularity;
+        const dateStr = key + (key.length === 7 ? '-01' : '') + 'T12:00:00Z';
+        const date = new Date(dateStr);
+        if (gran === 'month') return date.toLocaleDateString('en', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+        return date.toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    }
+
+    function getChartTitleText() {
+        const granLabel = granularity === 'day' ? 'Daily' : granularity === 'week' ? 'Weekly' : 'Monthly';
+        const fmt = (d) => d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric', timeZone });
+        const { start, end } = getDateRange();
+        const startStr = start ? fmt(start) : 'All time';
+        const endStr = end ? fmt(end) : 'Present';
+        return start ? `${granLabel} Usage: ${startStr} \u2013 ${endStr}` : `${granLabel} Usage: All time`;
+    }
+
+    function update() {
+        const docs = filterData(rawDocs);
+        const logins = filterData(rawLogins);
+
+        $('#metricDocs').textContent = docs.length.toLocaleString();
+        $('#metricSigners').textContent = new Set(docs.map(d => d.memberNumber)).size.toLocaleString();
+        $('#metricLogins').textContent = logins.length.toLocaleString();
+        $('#metricLoginUsers').textContent = new Set([...logins, ...docs].map(d => d.memberNumber)).size.toLocaleString();
+
+        $('#chartTitle').textContent = getChartTitleText();
+
+        const grouped = groupByPeriod(docs);
+        const keys = Object.keys(grouped).sort();
+
+        mainChart.data.labels = keys.map(formatPeriodLabel);
+        mainChart.data.datasets[0].data = keys.map(k => grouped[k]);
+        mainChart.update('none');
+
+        updateUsersTable(docs);
+        updateLangsTable(docs);
+        updatePieChart(docs);
+        updateVerification(filterData(rawVerifications));
+
+        rawDisplayCount = RAW_PAGE_SIZE;
+        updateRawTable(docs);
+    }
+
+    function buildBarTable(rows, labelFn, countFn) {
+        const max = rows[0] ? countFn(rows[0]) : 1;
+        const frag = document.createDocumentFragment();
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            const td1 = document.createElement('td');
+            const td2 = document.createElement('td');
+            const barCell = document.createElement('div');
+            barCell.className = 'bar-cell';
+            const span = document.createElement('span'); span.textContent = labelFn(r);
+            const bar = document.createElement('div'); bar.className = 'bar';
+            const fill = document.createElement('div'); fill.className = 'bar-fill';
+            fill.style.width = (countFn(r) / max) * 100 + '%';
+            bar.appendChild(fill);
+            barCell.appendChild(span); barCell.appendChild(bar);
+            td1.appendChild(barCell);
+            td2.textContent = countFn(r).toLocaleString();
+            tr.appendChild(td1); tr.appendChild(td2);
+            frag.appendChild(tr);
+        });
+        return frag;
+    }
+
+    function updateUsersTable(docs) {
+        const counts = {};
+        docs.forEach(d => {
+            if (!counts[d.memberNumber]) counts[d.memberNumber] = { name: d.member, count: 0 };
+            counts[d.memberNumber].count++;
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1].count - a[1].count);
+        const table = $('#usersTable');
+        table.textContent = '';
+        table.appendChild(buildBarTable(
+            sorted.map(([_, u]) => u),
+            u => u.name,
+            u => u.count,
+        ));
+    }
+
+    function updateLangsTable(docs) {
+        const counts = {};
+        docs.forEach(d => {
+            const key = d.from + ' \u2192 ' + d.to;
+            counts[key] = (counts[key] || 0) + 1;
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        const table = $('#langsTable');
+        table.textContent = '';
+        table.appendChild(buildBarTable(
+            sorted.map(([lang, count]) => ({ lang, count })),
+            r => r.lang,
+            r => r.count,
+        ));
+    }
+
+    function updatePieChart(docs) {
+        const counts = {};
+        docs.forEach(d => {
+            const key = d.from + ' \u2192 ' + d.to;
+            counts[key] = (counts[key] || 0) + 1;
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        pieChart.data.labels = sorted.map(([lang]) => lang);
+        pieChart.data.datasets[0].data = sorted.map(([, count]) => count);
+        pieChart.update('none');
+
+        const colors = pieChart.data.datasets[0].backgroundColor;
+        const total = sorted.reduce((s, [, c]) => s + c, 0);
+        const legendEl = $('#piePrintLegend');
+        legendEl.textContent = '';
+        const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
+        const cols = 2;
+        const rows = Math.ceil(sorted.length / cols);
+        for (let r = 0; r < rows; r++) {
+            const tr = document.createElement('tr');
+            for (let c = 0; c < cols; c++) {
+                const idx = c * rows + r;
+                if (idx < sorted.length) {
+                    const [lang, count] = sorted[idx];
+                    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+                    const color = colors[idx % colors.length];
+                    const tdColor = document.createElement('td');
+                    const colorSpan = document.createElement('span');
+                    colorSpan.className = 'legend-color';
+                    colorSpan.style.background = color;
+                    tdColor.appendChild(colorSpan);
+                    const tdLabel = document.createElement('td');
+                    tdLabel.className = 'legend-label';
+                    tdLabel.textContent = lang;
+                    const tdCount = document.createElement('td');
+                    tdCount.className = 'legend-count';
+                    tdCount.textContent = count.toLocaleString() + ' (' + pct + '%)';
+                    tr.appendChild(tdColor); tr.appendChild(tdLabel); tr.appendChild(tdCount);
+                } else {
+                    tr.appendChild(document.createElement('td'));
+                    tr.appendChild(document.createElement('td'));
+                    tr.appendChild(document.createElement('td'));
+                }
+            }
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        legendEl.appendChild(table);
+    }
+
+    function updateVerification(verifications) {
+        const found = verifications.filter(v => v.wasFound);
+        const notFound = verifications.filter(v => !v.wasFound);
+        const total = verifications.length;
+
+        const uniqueHashes = new Set(verifications.filter(v => v.documentHash).map(v => v.documentHash));
+        $('#metricVerifications').textContent = found.length.toLocaleString();
+        $('#metricUniqueVerifications').textContent = uniqueHashes.size.toLocaleString();
+        $('#metricVerAttempts').textContent = total.toLocaleString();
+        $('#metricVerNotFound').textContent = notFound.length.toLocaleString();
+        $('#metricVerRate').textContent = total > 0 ? ((found.length / total) * 100).toFixed(1) + '%' : '-';
+
+        const granLabel = verGranularity === 'day' ? 'Daily' : verGranularity === 'week' ? 'Weekly' : 'Monthly';
+        const fmt = (d) => d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric', timeZone });
+        const { start, end } = getDateRange();
+        const startStr = start ? fmt(start) : 'All time';
+        const endStr = end ? fmt(end) : 'Present';
+        $('#verChartTitle').textContent = start ? `${granLabel} Verifications: ${startStr} \u2013 ${endStr}` : `${granLabel} Verifications: All time`;
+
+        const foundGrouped = groupByPeriod(found, verGranularity);
+        const notFoundGrouped = groupByPeriod(notFound, verGranularity);
+        const allKeys = [...new Set([...Object.keys(foundGrouped), ...Object.keys(notFoundGrouped)])].sort();
+
+        verChart.data.labels = allKeys.map(k => formatPeriodLabel(k, verGranularity));
+        verChart.data.datasets[0].data = allKeys.map(k => foundGrouped[k] || 0);
+        verChart.data.datasets[1].data = allKeys.map(k => notFoundGrouped[k] || 0);
+        verChart.update('none');
+    }
+
+    function updateRawTable(docs) {
+        const sorted = [...docs].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const visible = sorted.slice(0, rawDisplayCount);
+        const total = sorted.length;
+
+        const verCounts = {};
+        rawVerifications.forEach(v => {
+            if (v.documentHash) verCounts[v.documentHash] = (verCounts[v.documentHash] || 0) + 1;
+        });
+
+        $('#rawCount').textContent = total.toLocaleString() + ' records';
+        const tbody = $('#rawTable tbody');
+        tbody.textContent = '';
+
+        visible.forEach(d => {
+            const date = new Date(d.date);
+            const dateStr = date.toLocaleString('en', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone });
+            const tr = document.createElement('tr');
+            const tdDate = document.createElement('td'); tdDate.className = 'date-col'; tdDate.textContent = dateStr;
+            const tdMember = document.createElement('td'); tdMember.textContent = d.member;
+            const tdNumber = document.createElement('td'); tdNumber.textContent = d.memberNumber;
+            const tdLang = document.createElement('td'); tdLang.className = 'lang-col'; tdLang.textContent = d.from + ' \u2192 ' + d.to;
+            const tdVer = document.createElement('td'); tdVer.textContent = (verCounts[d.hash] || 0).toLocaleString();
+            tr.appendChild(tdDate); tr.appendChild(tdMember); tr.appendChild(tdNumber); tr.appendChild(tdLang); tr.appendChild(tdVer);
+            tbody.appendChild(tr);
+        });
+
+        if (rawDisplayCount >= total) $('#rawFooter').classList.add('hidden');
+        else $('#rawFooter').classList.remove('hidden');
+    }
+
+    // Print handling — convert charts to images for better print quality.
+    let printImages = [];
+
+    function createPrintImages() {
+        removePrintImages();
+        if (mainChart) {
+            const canvas = $('#mainChart');
+            const container = $('.chart-area');
+            const img = document.createElement('img');
+            img.className = 'print-chart-img';
+            img.src = canvas.toDataURL('image/png', 1.0);
+            container.appendChild(img);
+            printImages.push(img);
+        }
+        if (verChart) {
+            const canvas = $('#verChart');
+            const container = $('.verification-chart-area');
+            const img = document.createElement('img');
+            img.className = 'print-chart-img';
+            img.src = canvas.toDataURL('image/png', 1.0);
+            container.appendChild(img);
+            printImages.push(img);
+        }
+        if (pieChart) {
+            const canvas = $('#langPieChart');
+            const container = $('.pie-chart-area');
+            const size = canvas.height;
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = size; tempCanvas.height = size;
+            const ctx = tempCanvas.getContext('2d');
+            const pieCenter = canvas.width * 0.25;
+            const cropX = pieCenter - size / 2;
+            ctx.drawImage(canvas, Math.max(0, cropX), 0, size, size, 0, 0, size, size);
+            const img = document.createElement('img');
+            img.className = 'print-chart-img';
+            img.src = tempCanvas.toDataURL('image/png', 1.0);
+            container.appendChild(img);
+            printImages.push(img);
+        }
+    }
+
+    function removePrintImages() {
+        printImages.forEach(img => { if (img.parentNode) img.parentNode.removeChild(img); });
+        printImages = [];
+    }
+
+    function setupPrintHandlers() {
+        window.addEventListener('beforeprint', () => {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric', timeZone });
+            $('#printDate').textContent = 'Generated ' + dateStr;
+            if (printImages.length === 0) createPrintImages();
+        });
+        window.addEventListener('afterprint', () => { removePrintImages(); });
+    }
+
+    setupEventListeners();
+    setupChart();
+    setupPrintHandlers();
+    update();
+})();
+</script>
+
+</body>
+</html>

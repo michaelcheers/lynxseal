@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin Hub</title>
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+</head>
+<body>
+<main style="padding:2em">
+  <h1>Administrator Portal</h1>
+  <a href="/admin/stats.html">View Statistics</a><br>
+  <span id="memberMgmt">
+    <a href="/admin/update-members-data.html">Update Members Data</a><br>
+    <a href="/admin/remove-user.html">Delete a User</a>
+  </span>
+</main>
+<script>
+// Some hosted tenants don't get member-data update / remove tools.
+(async () => {
+  try {
+    const ctx = await api.get('/api/public-context');
+    const restricted = ['ATIO', 'ATIM']; // tenants that hide the member-mgmt links
+    if (restricted.includes(ctx.association.name)) document.getElementById('memberMgmt').remove();
+  } catch {}
+})();
+</script>
+</body>
+</html>

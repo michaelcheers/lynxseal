@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Error</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha256-YLGeXaapI0/5IgZopewRJcFXomhRMlYYjugPLSyNjTY=" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="/css/lynxseal.css">
+</head>
+<body>
+<main style="padding:3em;max-width:600px;margin:0 auto">
+  <h1 class="text-danger">Error.</h1>
+  <h2 class="text-danger">An error occurred while processing your request.</h2>
+  <p id="errorMessage" style="display:none"><b>Error Message:</b> <span id="errorText"></span></p>
+  <p><a href="/">Back to home</a></p>
+</main>
+<script>
+const err = new URLSearchParams(location.search).get('msg');
+if (err) {
+  document.getElementById('errorMessage').style.display = '';
+  document.getElementById('errorText').textContent = err;
+}
+</script>
+</body>
+</html>
