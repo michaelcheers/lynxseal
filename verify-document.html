@@ -3,6 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Strict CSP, hardcoded to the exact CDN URLs this page loads. No
+  'unsafe-inline' / 'unsafe-eval' for scripts. 'wasm-unsafe-eval' is
+  required by argon2-browser (decodes inlined WASM via WebAssembly).
+  'unsafe-inline' on style-src covers the page's inline style="…" attrs.
+  TODO: when QR-supporting tenants (ATIO, ATIM) come online, add the S3
+  presigned-URL host to connect-src so checkQRCode's fetch() works.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' 'wasm-unsafe-eval'
+    https://cdn.jsdelivr.net/npm/node-forge@1.4.0/dist/forge.min.js
+    https://cdn.jsdelivr.net/npm/pdfjs-dist@1.4.20/build/pdf.combined.js
+    https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js;
+  style-src 'self' 'unsafe-inline'
+    https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css;
+  connect-src 'self' https://api.lynxseal.com;
+  img-src 'self' data:;
+  font-src 'self' data:;
+  base-uri 'none';
+  form-action 'self';
+  object-src 'none';
+">
 <title>Check a digital stamp</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha256-YLGeXaapI0/5IgZopewRJcFXomhRMlYYjugPLSyNjTY=" crossorigin="anonymous" referrerpolicy="no-referrer">
 <link rel="stylesheet" href="/css/site.css">
@@ -11,9 +34,13 @@
 <script src="/js/portal-bridge.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/argon2-init.js?v=1"></script>
-<!-- pdf-lib: walks the PDF xref to extract the signature dict's
-     /ByteRange + /Contents. -->
-<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" integrity="sha256-D5pcrQeUHwgmWGyU4InYm5GMRuXBfPLVo8b2ZuO8aU8=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- pdfjs-dist 1.4.20: last UMD combined build with the pre-modern
+     synchronous PDFDocument API (parseStartXRef / parse / xref.fetch).
+     Used parse-only to walk the AcroForm → Fields[0] → /V dict; we
+     never render, so the two known CVEs (CVE-2024-4367 font_loader.js
+     eval, CVE-2018-5158 PostScript compiler) sit on code paths we
+     never invoke. UMD exposes window.pdfjsDistBuildPdfCombined. -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@1.4.20/build/pdf.combined.js" integrity="sha256-z//eU6IQXK8mjAne+E4/FiLLDcSbXaeTsf3k+YQKVd0=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- node-forge: single UMD bundle, exposes window.forge. Provides ASN.1
      parsing, PKCS#7 (CMS), X.509 cert handling, and SHA-256. Replaces
      the pkijs ESM+bare-imports rabbit hole. -->
@@ -36,7 +63,7 @@
             <span class="fr-only">Vérifiez la validité d'un document tamponné numériquement par <span id="assocName2"></span></span>
           </h6><br>
 
-          <form onsubmit="performVerification();return false;">
+          <form id="verifyForm">
             <div class="form-group">
               <label for="translationPackage">
                 <span class="en-only">Translation Document (PDF)</span>
@@ -72,436 +99,6 @@
 
 </main>
 
-<script>
-// Will be filled from /api/public-context. SupportsQR controls the QR
-// verification flow (hash-based) vs PDF-only verification.
-let SUPPORTS_QR = false;
-let ASSOCIATION = null;
-
-(async () => {
-  try {
-    const ctx = await api.get('/api/public-context');
-    SUPPORTS_QR = !!ctx.association.supportsQr;
-    ASSOCIATION = ctx.association;
-    document.getElementById('assocName1').textContent = ctx.association.name;
-    document.getElementById('assocName2').textContent = ctx.association.name;
-    if (SUPPORTS_QR) document.getElementById('certNumberGroup').style.display = '';
-    // Style for ATIO vs non-ATIO signing-info-div presentation
-    if (ctx.association.name !== 'ATIO') {
-      const div = document.getElementById('signingInfoDiv');
-      div.onclick = () => { div.style.display = 'none'; };
-      Object.assign(div.style, {
-        display: 'none', position: 'fixed', top: 0, left: 0, width: '100%',
-        overflow: 'hidden', zIndex: 99999, height: '100%', backgroundColor: 'rgba(0,0,0,0.5)',
-      });
-      const closer = document.createElement('button');
-      closer.innerHTML = '&times;';
-      closer.onclick = (e) => { e.stopPropagation(); div.style.display = 'none'; };
-      Object.assign(closer.style, { outline: 'none', border: 'none', backgroundColor: 'transparent', float: 'right', zIndex: 999999, position: 'fixed', top: 0, right: 0 });
-      const inner = div.firstElementChild;
-      Object.assign(inner.style, { backgroundColor: 'white', position: 'fixed', top: 0, left: 'calc((100% - min(106.518vh, 100%)) / 2)', width: 'min(106.518vh, 100%)', height: '100%', paddingLeft: '50px' });
-      inner.onclick = (e) => e.stopPropagation();
-      div.prepend(closer);
-      const h1 = document.createElement('h1');
-      h1.innerHTML = '<span class="en-only">Stamp Information</span><span class="fr-only">Informations sur le tampon</span>';
-      inner.prepend(h1);
-    }
-    document.getElementById('mainContent').style.display = '';
-    // Bootstrap trusted certificates + start auto-verify if URL has #key
-    initVerification(ctx.rootCertificateBase64, ctx.oldRootCertificateBase64);
-  } catch (e) {
-    document.body.innerHTML = '<p style="padding:2em;color:#900">Failed to load: ' + (e.message || e) + '</p>';
-  }
-})();
-
-// Language toggle
-function switchLanguage(lang) {
-  document.body.classList.toggle('lang-fr', lang === 'fr');
-  document.body.classList.toggle('lang-en', lang !== 'fr');
-  const url = new URL(location.href);
-  if (lang === 'fr') url.searchParams.set('lang', 'fr'); else url.searchParams.delete('lang');
-  history.replaceState(null, '', url.toString());
-}
-switchLanguage(new URLSearchParams(location.search).get('lang') || 'en');
-
-function fromCustomBase64(s) {
-  return s.replaceAll('-', 'O').replaceAll('=', 'l').padEnd(Math.ceil(s.length / 4) * 4, '=');
-}
-function reportErrorAlert(e) { console.error(e); alert(e.message || e); }
-function getErrorOrNull(e) {
-  if (e && e.message && e.message.startsWith('SuperSigning.UserVisibleException:')) return e.message.replace(/^SuperSigning\.UserVisibleException:\s*/, '');
-  return null;
-}
-
-// Trust anchor — populated from /api/public-context root cert(s). Each entry
-// is a node-forge X.509 certificate. trustedCaStore is the same set indexed
-// by forge.pki.createCaStore for chain validation.
-let trustedCertificates = [];
-let trustedCaStore = null;
-
-async function initVerification(rootCertB64, oldRootCertB64) {
-  const b64s = [rootCertB64];
-  if (!SUPPORTS_QR && oldRootCertB64) b64s.push(oldRootCertB64);
-  trustedCertificates = b64s.map(b64 => {
-    // base64 → binary string → DER bytes → forge cert
-    const der = forge.util.decode64(b64);
-    const asn1 = forge.asn1.fromDer(der);
-    return forge.pki.certificateFromAsn1(asn1);
-  });
-  trustedCaStore = forge.pki.createCaStore(trustedCertificates);
-  // If URL has #<18-char key>, auto-verify via QR flow.
-  if (SUPPORTS_QR && location.hash && location.hash.length >= 2) checkQRCode();
-}
-
-function parseParameters(hash = window.location.hash.substring(1)) {
-  if (hash.length !== 18) return null;
-  hash = fromCustomBase64(hash);
-  return [hash.substring(0, 4), hash.substring(4)];
-}
-
-// PDF /Contents <hex string> → raw bytes. pdf-lib parses /Contents as a
-// PDFHexString whose .value is the original hex characters between < and >;
-// we convert pairs of hex digits back to the PKCS#7 binary blob.
-function _hexToBytes(hex) {
-  hex = hex.replace(/\s+/g, '');
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return out;
-}
-// node-forge buffer / asn1 helpers all speak "binary strings" (one char per
-// byte). These two helpers convert between Uint8Array (what Web APIs return)
-// and forge's binary-string convention without leaking signed/unsigned bugs.
-function _bytesToBinaryStr(bytes) {
-  let s = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-  return s;
-}
-function _binaryStrToBytes(s) {
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
-  return out;
-}
-
-// node-forge does RSA in pure JS — ~10× slower than native. Hand the actual
-// signature verification to WebCrypto's SubtleCrypto while keeping forge for
-// ASN.1 / cert parsing. Used for both the SignerInfo signature check and each
-// chain link (signerCert signed by trusted root).
-async function _webCryptoVerifyRSA(forgePublicKey, signatureBytes, dataBytes) {
-  const spkiDer = forge.asn1.toDer(forge.pki.publicKeyToAsn1(forgePublicKey)).getBytes();
-  const spkiU8 = _binaryStrToBytes(spkiDer);
-  const key = await crypto.subtle.importKey(
-    'spki', spkiU8,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false, ['verify']
-  );
-  const sigU8 = typeof signatureBytes === 'string' ? _binaryStrToBytes(signatureBytes) : signatureBytes;
-  const dataU8 = dataBytes instanceof Uint8Array ? dataBytes : _binaryStrToBytes(dataBytes);
-  return await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, sigU8, dataU8);
-}
-
-// Verify cert was signed by issuer's public key. Replaces the RSA-verify part
-// of forge.pki.verifyCertificateChain with WebCrypto; we still check issuer
-// match and validity dates manually below.
-async function _webCryptoVerifyCertSignedBy(cert, issuerCert) {
-  const tbsDer = forge.asn1.toDer(forge.pki.getTBSCertificate(cert)).getBytes();
-  return await _webCryptoVerifyRSA(issuerCert.publicKey, cert.signature, _binaryStrToBytes(tbsDer));
-}
-
-function _certIssuerMatches(cert, issuerCert) {
-  const a = cert.issuer.attributes, b = issuerCert.subject.attributes;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i].type !== b[i].type || a[i].value !== b[i].value) return false;
-  return true;
-}
-
-function _certValid(cert, when) {
-  return when >= cert.validity.notBefore && when <= cert.validity.notAfter;
-}
-
-async function checkDigitalSignatureInternal(buffer, viewable = false) {
-  try {
-    signingInfoDetails.innerHTML = '';
-    const view = new Uint8Array(buffer);
-
-    // === PDF parse: walk to the signature dict's /ByteRange + /Contents ===
-    const { PDFDocument, PDFName, PDFDict, PDFArray, PDFNumber, PDFHexString } = PDFLib;
-    let pdfDoc;
-    try { pdfDoc = await PDFDocument.load(view, { ignoreEncryption: true }); }
-    catch (e) { throw new Error('Wrong structure of PDF!'); }
-    const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
-    if (!acroForm) throw new Error('The PDF has no signature!');
-    const fields = acroForm.lookup(PDFName.of('Fields'), PDFArray);
-    if (!fields || fields.size() === 0) throw new Error('Wrong structure of PDF!');
-    const sigField = fields.lookup(0, PDFDict);
-    const ft = sigField.lookup(PDFName.of('FT'));
-    if (!(ft instanceof PDFName) || ft.encodedName !== '/Sig') throw new Error('Wrong structure of PDF!');
-    const v = sigField.lookup(PDFName.of('V'), PDFDict);
-    const byteRangeArr = v.lookup(PDFName.of('ByteRange'), PDFArray);
-    const byteRange = [];
-    for (let i = 0; i < 4; i++) byteRange.push(byteRangeArr.lookup(i, PDFNumber).asNumber());
-    const contentsObj = v.lookup(PDFName.of('Contents'));
-    if (!(contentsObj instanceof PDFHexString)) throw new Error('Wrong /Contents encoding');
-    const contentBytes = _hexToBytes(contentsObj.value);
-
-    // === Bytes covered by the signature: [a..a+b) and [c..c+d) ===
-    const signedData = new Uint8Array(byteRange[1] + byteRange[3]);
-    let cursor = 0;
-    signedData.set(view.subarray(byteRange[0], byteRange[0] + byteRange[1]), cursor); cursor += byteRange[1];
-    signedData.set(view.subarray(byteRange[2], byteRange[2] + byteRange[3]), cursor);
-
-    // === Parse the PKCS#7 detached SignedData blob ===
-    // /Contents is zero-padded to CSIZE bytes after the actual ASN.1
-    // structure ends, so parseAllBytes=false stops the forge parser at the
-    // SignedData SEQUENCE's natural end instead of choking on the padding.
-    const p7Asn1 = forge.asn1.fromDer(_bytesToBinaryStr(contentBytes), { parseAllBytes: false });
-    const p7 = forge.pkcs7.messageFromAsn1(p7Asn1);
-    if (!p7.certificates || p7.certificates.length !== 1) throw new Error('Number of certificates in signature invalid!');
-    const signerCert = p7.certificates[0];
-    const signerInfo = p7.rawCapture.signerInfos && p7.rawCapture.signerInfos[0];
-    if (!signerInfo) throw new Error('No SignerInfo present');
-
-    // === SignerInfo fields ===
-    //   value[0] = version
-    //   value[1] = issuerAndSerialNumber
-    //   value[2] = digestAlgorithm (SEQUENCE { OID, ... })
-    //   value[3] = [0] IMPLICIT signedAttrs (present)
-    //   value[4] = signatureAlgorithm
-    //   value[5] = signature OCTET STRING
-    const digestAlgOid = forge.asn1.derToOid(signerInfo.value[2].value[0].value);
-    if (digestAlgOid !== forge.pki.oids.sha256) throw new Error('Invalid hashing algorithm');
-    const signedAttrsAsn1 = signerInfo.value[3];
-    if (!signedAttrsAsn1 || signedAttrsAsn1.tagClass !== forge.asn1.Class.CONTEXT_SPECIFIC || signedAttrsAsn1.type !== 0)
-      throw new Error('signedAttrs is not present.');
-    const signatureBytes = signerInfo.value[5].value; // octet string contents
-
-    // === Verify: doc SHA-256 == messageDigest attribute ===
-    // WebCrypto for the big hash — forge.md.sha256 is pure JS and crawls on
-    // multi-MB PDFs.
-    const docDigestBuf = await crypto.subtle.digest('SHA-256', signedData);
-    const docDigestHex = Array.from(new Uint8Array(docDigestBuf), b => b.toString(16).padStart(2, '0')).join('');
-
-    // SignedAttributes is a SET of Attribute { type OID, values SET OF ANY }.
-    // Find type=messageDigest (1.2.840.113549.1.9.4), value is an OCTET STRING.
-    let messageDigestHex = null;
-    for (const attr of signedAttrsAsn1.value) {
-      const attrOid = forge.asn1.derToOid(attr.value[0].value);
-      if (attrOid === forge.pki.oids.messageDigest) {
-        // attr.value[1] is the SET OF values, first element is the OCTET STRING
-        messageDigestHex = forge.util.bytesToHex(attr.value[1].value[0].value);
-        break;
-      }
-    }
-    if (!messageDigestHex) throw new Error("No signed attribute 'MessageDigest'");
-    if (messageDigestHex !== docDigestHex) throw new Error('Hash is not correct');
-
-    // === Verify: cert chains to one of the trusted roots ===
-    // Per-trust-anchor loop so the "old CA" path is tried separately. RSA
-    // signature verify is done via WebCrypto (native, fast); issuer match
-    // and validity dates are checked manually.
-    let trustedIndex = -1;
-    const now = new Date();
-    if (!_certValid(signerCert, now)) throw new Error('Certificate not currently valid');
-    for (let i = 0; i < trustedCertificates.length; i++) {
-      const root = trustedCertificates[i];
-      if (!_certIssuerMatches(signerCert, root)) continue;
-      if (!_certValid(root, now)) continue;
-      if (await _webCryptoVerifyCertSignedBy(signerCert, root)) { trustedIndex = i; break; }
-    }
-    if (trustedIndex < 0) throw new Error('Signature verification failed');
-
-    // === Verify: RSA signature over DER(SignedAttributes as SET) ===
-    // Signed bytes are the DER encoding of the SignedAttributes structure
-    // RE-TAGGED as a UNIVERSAL SET (tag 0x31) rather than the [0] IMPLICIT
-    // context-specific tag it had in the SignerInfo. Spec: RFC 5652 §5.4.
-    // WebCrypto hashes internally for RSASSA-PKCS1-v1_5 + SHA-256, so we
-    // pass the raw signedAttrsDer bytes, not a pre-computed digest.
-    const reTagged = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SET,
-      true,
-      signedAttrsAsn1.value,
-    );
-    const signedAttrsDer = forge.asn1.toDer(reTagged).getBytes();
-    const sigOk = await _webCryptoVerifyRSA(signerCert.publicKey, signatureBytes, _binaryStrToBytes(signedAttrsDer));
-    if (!sigOk) throw new Error('Signature verification failed');
-
-    // === Extract org name (O attribute) from signer cert subject for display ===
-    let associationName;
-    for (const attr of signerCert.subject.attributes) {
-      if (attr.type === forge.pki.oids.organizationName || attr.shortName === 'O') {
-        associationName = attr.value; break;
-      }
-    }
-    if (associationName === undefined) throw new Error('Assocation of certificate not set');
-
-    // Doc digest hex (already computed above) — used as the lookup key for
-    // the server-side hash check.
-    hashValue.value = docDigestHex;
-    const makeStibcDialog = () => {
-        signingInfo.style.color = 'green';
-        signingInfo.innerText = document.body.classList.contains('lang-fr')
-          ? '✅ Ce tampon numérique a été vérifié !'
-          : '✅ This digital stamp was verified!';
-        signingInfo.appendChild(document.createElement('br'));
-        const tmpl = 'Society of Translators ';
-        const isFr = document.body.classList.contains('lang-fr');
-        const start = isFr ? "(Certifiée par l'" : '(Certified by the ';
-        const end = ')';
-        if (associationName.startsWith(tmpl)) {
-          signingInfo.appendChild(new Text(`${start}${isFr ? 'Société des traducteurs' : 'Society of Translators'}`));
-          signingInfo.appendChild(document.createElement('br'));
-          signingInfo.appendChild(new Text(`${associationName.substr(tmpl.length)}${end}`));
-        } else {
-          if (isFr && associationName === 'Association of Translators and Interpreters of Ontario')
-            associationName = "Association des traducteurs et interprètes de l'Ontario";
-          signingInfo.appendChild(new Text(`${start}${associationName}${end}`));
-        }
-      };
-      if (trustedIndex === 0) {
-        let signatureDetails;
-        try {
-          signatureDetails = await api.post('/api/verify-document', { hash: hashValue.value, lang: document.body.classList.contains('lang-fr') ? 'fr' : '' });
-        } catch (e) {
-          throw new Error('SuperSigning.UserVisibleException: Cannot verify digital stamp: The connection to the server failed.');
-        }
-        const { TimeSigned: { Raw, Title }, Signer: { FullName, Email, MemberNumber, Association: Assoc }, DocumentDescription, LanguagePair } = signatureDetails;
-        associationName = Assoc.LongName;
-        makeStibcDialog();
-        signingInfo.appendChild(document.createElement('br'));
-        signingInfo.appendChild(document.createElement('br'));
-        if (!SUPPORTS_QR) {
-          signingInfo.appendChild(Object.assign(document.createElement('a'), {
-            innerText: document.body.classList.contains('lang-fr') ? 'Voir les détails' : 'View Details',
-            href: 'javascript:void(0)',
-            onclick: () => signingInfoDiv.style.display = '',
-          }));
-        }
-        if (viewable) {
-          signingInfo.appendChild(document.createElement('br'));
-          signingInfo.appendChild(Object.assign(document.createElement('a'), {
-            innerText: document.body.classList.contains('lang-fr') ? 'Voir le document' : 'View Document',
-            href: 'javascript:void(0)',
-            onclick: () => {
-              const blob = new Blob([buffer], { type: 'application/pdf' });
-              const url = URL.createObjectURL(blob);
-              window.open(url, '_blank');
-            },
-          }));
-        }
-        const div = signingInfoDetails;
-        div.parentElement.style.fontSize = '1rem';
-        if (!SUPPORTS_QR) div.parentElement.style.overflow = 'scroll';
-        const fr = document.body.classList.contains('lang-fr');
-        div.appendChild(Object.assign(document.createElement('u'), { innerText: fr ? 'Informations sur le document' : 'Document Info' }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? `Nom: ${DocumentDescription}` : `Name: ${DocumentDescription}`)); div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? `Paire de langues: ${LanguagePair}` : `Language Pair: ${LanguagePair}`)); div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? 'Date de tamponnage: ' : 'Date Stamped: '));
-        div.appendChild(Object.assign(document.createElement('span'), { innerText: Title, title: Raw }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(Object.assign(document.createElement('u'), { innerText: fr ? 'Tamponné par' : 'Stamped By' }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? 'Nom: ' : 'Name: ')); div.appendChild(new Text(FullName)); div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? 'Courriel: ' : 'Email: '));
-        div.appendChild(Object.assign(document.createElement('a'), { innerText: Email, href: `mailto:${Email}`, target: '_blank' }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? `Numéro de membre ${Assoc.Name}: ` : `${Assoc.Name} Member Number: `));
-        div.appendChild(new Text(MemberNumber));
-      } else makeStibcDialog();
-  } catch (e) { reportVerifyFailure(e); }
-}
-
-function reportVerifyFailure(e) {
-  console.error(e);
-  if (hashValue.value === '') api.post('/api/verify-document', { hash: '' }).catch(() => {});
-  hashValue.value = '';
-  signingInfo.style.color = 'red';
-  signingInfo.innerText = getErrorOrNull(e) ?? (document.body.classList.contains('lang-fr')
-    ? "❌ Le tampon numérique n'a pas pu être vérifié.\nNous vous invitons à contacter le traducteur."
-    : '❌ The digital stamp could not be verified.\nWe invite you to contact the translator.');
-}
-
-function checkDigitalSignature() {
-  signingInfo.innerText = '';
-  try {
-    const file = translationPackage.files[0];
-    const reader = new FileReader();
-    reader.onload = async () => { try { await checkDigitalSignatureInternal(reader.result); } catch (e) { reportErrorAlert(e); } };
-    reader.readAsArrayBuffer(file);
-  } catch (e) { reportErrorAlert(e); }
-}
-window.checkDigitalSignature = checkDigitalSignature;
-
-function padEncryptionKey(key) {
-  const out = new Uint8Array(32);
-  out.set(key.slice(0, Math.min(key.length, 32)));
-  return out;
-}
-
-async function decryptFile(encryptedFileBlob, base64Key) {
-  try {
-    const buf = await encryptedFileBlob.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    const magic = bytes.slice(0, 4);
-    const isArgon = magic[0] === 0x41 && magic[1] === 0x52 && magic[2] === 0x47 && magic[3] === 0x32;
-    let keyBytes, iv, ciphertext;
-    if (isArgon) {
-      const salt = bytes.slice(4, 20);
-      const saltB64 = btoa(String.fromCharCode.apply(null, salt));
-      const derivedB64 = await window.deriveKeyWithArgon2(base64Key, saltB64);
-      keyBytes = Uint8Array.from(atob(derivedB64), c => c.charCodeAt(0));
-      iv = bytes.slice(20, 36); ciphertext = bytes.slice(36);
-    } else {
-      keyBytes = padEncryptionKey(Uint8Array.from(atob(base64Key), c => c.charCodeAt(0)));
-      iv = bytes.slice(0, 16); ciphertext = bytes.slice(16);
-    }
-    const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CBC', length: 256 }, false, ['decrypt']);
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, ciphertext);
-    return new Uint8Array(decrypted);
-  } catch (e) { console.error('Decryption failed:', e); return null; }
-}
-
-function performVerification() {
-  const pdfFile = translationPackage.files && translationPackage.files[0];
-  const verificationCode = SUPPORTS_QR ? certNumber.value.trim() : '';
-  if (pdfFile && verificationCode) {
-    signingInfo.style.color = 'red';
-    signingInfo.innerText = document.body.classList.contains('lang-fr')
-      ? 'Veuillez fournir soit un document PDF soit un code de vérification, pas les deux.'
-      : 'Please provide either a PDF document or a verification code, not both.';
-    return;
-  }
-  if (pdfFile) checkDigitalSignature();
-  else if (SUPPORTS_QR && verificationCode) checkQRCode(verificationCode);
-  else {
-    signingInfo.style.color = 'red';
-    signingInfo.innerText = document.body.classList.contains('lang-fr')
-      ? (SUPPORTS_QR ? 'Veuillez fournir soit un document PDF soit un code de vérification.' : 'Veuillez fournir un document PDF.')
-      : (SUPPORTS_QR ? 'Please provide either a PDF document or a verification code.' : 'Please provide a PDF document.');
-  }
-}
-window.performVerification = performVerification;
-
-async function checkQRCode(key) {
-  try {
-    const params = parseParameters(key);
-    if (!params) throw new Error('verify failed');
-    const [qrId, encryptionKey] = params;
-    const { downloadUrl } = await api.get(`/api/fetch-document?qrId=${encodeURIComponent(qrId)}`);
-    if (!downloadUrl) throw new Error('Download URL not found in response.');
-    const docResp = await fetch(downloadUrl);
-    if (!docResp.ok) throw new Error(`Failed to download document content from S3: ${docResp.status}`);
-    const encryptedFile = await docResp.blob();
-    const pdfBytes = await decryptFile(encryptedFile, encryptionKey);
-    if (!pdfBytes) throw new Error('Decryption failed.');
-    await checkDigitalSignatureInternal(pdfBytes, true);
-  } catch (e) {
-    if (key !== undefined) { signingInfoDetails.innerHTML = ''; reportVerifyFailure(e); }
-  }
-}
-window.checkQRCode = checkQRCode;
-</script>
+<script src="/js/verify-document.js" defer></script>
 </body>
 </html>
