@@ -36,7 +36,12 @@
 </div>
 </main>
 <script>
-const code = new URLSearchParams(location.search).get('code') || location.pathname.replace(/^\/verify\//, '').replace(/\.html$/, '');
+// Hash format: #<bare-code> with optional &key=value pairs after.
+// Code stays client-side — never sent to the wrapper origin's server,
+// no entry in GitHub Pages logs, no leak via Referer headers.
+const [hashCode, ...hashRest] = location.hash.substring(1).split('&');
+const hashParams = new URLSearchParams(hashRest.join('&'));
+const code = decodeURIComponent(hashCode || '');
 
 function showError(msg) {
   document.getElementById('loadingMsg').style.display = 'none';
