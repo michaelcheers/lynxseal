@@ -138,9 +138,9 @@
       (function () {
         const BLOB_URLS = ${mapJson};
 
-        // Prevent the viewer from auto-opening a default PDF on startup.
-        // viewer.mjs reads PDFViewerApplicationOptions.defaultUrl during
-        // run() — setting it to empty string short-circuits that path.
+        // Prevent the viewer from auto-opening a default PDF on startup,
+        // and disable persistent Preferences (which would otherwise override
+        // our AppOptions and spam the console with a warning about it).
         Object.defineProperty(window, 'PDFViewerApplicationOptions', {
           configurable: true,
           get() { return this._pdfvopts; },
@@ -148,6 +148,7 @@
             this._pdfvopts = v;
             if (v && typeof v.set === 'function') {
               try { v.set('defaultUrl', ''); } catch {}
+              try { v.set('disablePreferences', true); } catch {}
             }
           },
         });
@@ -209,11 +210,18 @@
     let html = new TextDecoder('utf-8').decode(htmlBytes);
 
     // Map of href/src tokens in viewer.html → archive paths in the zip.
+    // We deliberately leave `locale/locale.json` as a relative href so that
+    // L10n's #getPaths reads its baseURL from the resolved <link>.href and
+    // can build sibling URLs like `locale/<lang>/viewer.ftl`. Our fetch
+    // interceptor catches both the initial locale.json request and each
+    // bundle fetch via the `web/<path>` candidate-key lookup. If we
+    // pre-replaced with a blob URL here, L10n's baseURL derivation would
+    // truncate at the blob's first `/` and throw "Invalid URL" on bundle
+    // construction.
     const replacements = {
       'viewer.css': 'web/viewer.css',
       'viewer.mjs': 'web/viewer.mjs',
       '../build/pdf.mjs': 'build/pdf.mjs',
-      'locale/locale.json': 'web/locale/locale.json',
     };
     for (const [token, archivePath] of Object.entries(replacements)) {
       const blob = blobUrls[archivePath];

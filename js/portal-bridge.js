@@ -42,11 +42,13 @@
 
   function send(msg) {
     if (!wrapperOrigin) {
-      // Pre-handshake: broadcast to all known wrappers; they'll filter by
-      // checking event.source / origin.
-      for (const origin of KNOWN_WRAPPER_ORIGINS) {
-        try { window.parent.postMessage(msg, origin); } catch {}
-      }
+      // Pre-handshake: we don't yet know which wrapper we're embedded in,
+      // so use targetOrigin '*'. Safe because the only message sent in
+      // this state is the init request, which contains nothing sensitive
+      // (the wrapper filters by allowlist on its end before responding).
+      // Sending per-origin with the wrong targetOrigin would spam the
+      // console with cross-origin postMessage errors.
+      window.parent.postMessage(msg, '*');
     } else {
       window.parent.postMessage(msg, wrapperOrigin);
     }
