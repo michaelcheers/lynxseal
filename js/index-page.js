@@ -74,7 +74,7 @@ function addPDFToPreview(oldIframe, pdf) {
   // committed upstream release ZIP client-side, hash-verifies it, and
   // wires viewer.html via srcdoc + blob URLs. See pdfjs-loader.js.
   window.LynxsealPdfjs.openViewer(iframe)
-    .then(async app => { await app.open(await pdf.arrayBuffer()); })
+    .then(async app => { await app.open({ data: await pdf.arrayBuffer() }); })
     .catch(reportErrorAlert)
     .finally(resetIframe);
 }
@@ -614,7 +614,7 @@ function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
         const hideToolbar = window.DeclarationContext.association.name === 'ATIO';
         window.LynxsealPdfjs.openViewer(stampedPdfFrame)
           .then(async app => {
-            await app.open(await asBlob.arrayBuffer());
+            await app.open({ data: await asBlob.arrayBuffer() });
             if (hideToolbar) {
               const doc = stampedPdfFrame.contentDocument;
               for (const id of ['print', 'download', 'openFile', 'viewBookmark']) {
@@ -706,7 +706,7 @@ function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
       const pdfFrame = modalDlg.querySelector('[name=pdfFrame]');
       window.LynxsealPdfjs.openViewer(pdfFrame).then(async PDFViewerApplication => {
         try {
-          await PDFViewerApplication.open(await uint8ArrayToBase64URL(pkg, 'application/pdf'));
+          await PDFViewerApplication.open({ data: pkg });
           await PDFViewerApplication.pdfViewer.pagesPromise;
           const stampSrc = URL.createObjectURL(stamp);
           let img = await imageDimensions(stampSrc);

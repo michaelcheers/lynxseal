@@ -62,12 +62,34 @@
 
     // Convert every file to a blob URL keyed by its archive path. The
     // monkey-patched fetch inside the viewer iframe resolves runtime
-    // requests against this map.
+    // requests against this map. We blobify everything EXCEPT viewer.css
+    // first, then pre-process the CSS to rewrite its `url(images/...)`
+    // references to the matching blob URLs (the CSS engine doesn't go
+    // through window.fetch, so monkey-patching alone doesn't catch them).
     const blobUrls = Object.create(null);
     for (const [name, bytes] of Object.entries(files)) {
       if (name.endsWith('/')) continue; // skip directory entries
+      if (name === 'web/viewer.css') continue; // handled below
       const mime = _guessMime(name);
       blobUrls[name] = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    }
+    if (files['web/viewer.css']) {
+      let css = new TextDecoder('utf-8').decode(files['web/viewer.css']);
+      // url(images/x.svg) | url("images/x.svg") | url('images/x.svg')
+      // Also covers nested paths under web/. Anything we can't resolve is
+      // left alone (the original 404 surfaces, which is the right signal).
+      css = css.replace(/url\((["']?)([^)"']+)\1\)/g, (m, _q, raw) => {
+        const path = raw.trim();
+        // Normalize a few likely prefixes to the archive's `web/` layout.
+        const candidates = [
+          'web/' + path,
+          path.startsWith('./') ? 'web/' + path.slice(2) : null,
+          path,
+        ].filter(Boolean);
+        for (const c of candidates) if (blobUrls[c]) return 'url(' + blobUrls[c] + ')';
+        return m;
+      });
+      blobUrls['web/viewer.css'] = URL.createObjectURL(new Blob([css], { type: 'text/css' }));
     }
     return { files, blobUrls };
   }
@@ -119,16 +141,24 @@
         // constructs URLs like "../web/cmaps/Adobe-CNS1-UCS2.bcmap" relative
         // to its own (about:srcdoc) location, which the browser resolves
         // against the parent's URL → "https://parent/web/cmaps/X.bcmap".
-        // We strip everything before the recognizable "/web/" or "/build/"
-        // segment and look up the rest in BLOB_URLS, where keys are the
-        // archive-relative paths ("web/cmaps/X.bcmap", "build/pdf.worker.mjs").
+        // We try a few candidate keys against BLOB_URLS:
+        //   1. "web/cmaps/X.bcmap" — fully qualified archive path
+        //   2. "cmaps/X.bcmap"      — bare path (viewer.mjs sometimes drops "web/")
+        //   3. "build/pdf.worker.mjs" — top-level build paths
+        // For (2) we also try prefixing "web/" since most non-build assets
+        // live under web/ in the archive.
         function resolveBlob(rawUrl) {
           if (!rawUrl) return null;
           let urlStr;
           try { urlStr = new URL(String(rawUrl), location.href).href; }
           catch { urlStr = String(rawUrl); }
-          const m = urlStr.match(/\\/((?:web|build)\\/[^?#]+)/);
-          if (m && BLOB_URLS[m[1]]) return BLOB_URLS[m[1]];
+          // Trim origin to get just the path
+          const path = urlStr.replace(/^[a-z]+:\\/\\/[^/]+/, '').replace(/[?#].*/, '').replace(/^\\//, '');
+          const candidates = [
+            path,                  // e.g. "web/cmaps/X.bcmap" or "build/pdf.worker.mjs"
+            'web/' + path,         // e.g. "images/foo.svg" → "web/images/foo.svg"
+          ];
+          for (const c of candidates) if (BLOB_URLS[c]) return BLOB_URLS[c];
           return null;
         }
 
