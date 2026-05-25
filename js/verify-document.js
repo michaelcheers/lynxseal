@@ -152,22 +152,19 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     const view = new Uint8Array(buffer);
 
     // === PDF parse: walk to the signature dict's /ByteRange + /Contents ===
-    // Uses pdfjs-dist 1.4.20's pre-modern synchronous PDFDocument API,
-    // which does lazy xref-only parsing (orders of magnitude faster than
-    // pdf-lib's eager full-document parse on large PDFs). Modern pdf.js
-    // hides this behind a worker + proxy and doesn't expose /ByteRange
-    // or /Contents through any public method.
-    const { PDFDocument: OldPDFDocument, isRef } = window.pdfjsDistBuildPdfCombined;
+    // pdfjs-dist 1.0.813 attaches PDFDocument + isRef as window globals
+    // (pre-UMD-wrapper era). Lazy xref-only parsing — orders of magnitude
+    // faster than pdf-lib's eager full-document parse on large PDFs.
     let pdf;
     try {
-      pdf = new OldPDFDocument(null, view, null);
+      pdf = new window.PDFDocument(null, view, null);
       pdf.parseStartXRef();
       pdf.parse();
     } catch (e) { throw new Error('Wrong structure of PDF!'); }
     const acroForm = pdf.xref.root.get('AcroForm');
     if (typeof acroForm === 'undefined') throw new Error('The PDF has no signature!');
     const fields = acroForm.get('Fields');
-    if (!fields || !fields.length || !isRef(fields[0])) throw new Error('Wrong structure of PDF!');
+    if (!fields || !fields.length || !window.isRef(fields[0])) throw new Error('Wrong structure of PDF!');
     const sigField = pdf.xref.fetch(fields[0]);
     const sigFieldType = sigField.get('FT');
     if (typeof sigFieldType === 'undefined' || sigFieldType.name !== 'Sig') throw new Error('Wrong structure of PDF!');
