@@ -6,7 +6,8 @@
 //   - pdf-lib  (window.PDFLib)        general PDF manipulation
 //   - fontkit  (window.fontkit)        registered onto each PDFDocument
 //   - qrcode-generator (window.qrcode) QR code rasterization
-//   - pkijs / asn1js                   PKCS#7 detached signature production
+// PKCS#7 detached signature production happens server-side; we only do the
+// /ByteRange + /Contents placeholder dance here.
 //
 // CRYPTO + SIGNING NOTE: the signing path (GenerateSigningRequest + SignPDFFile)
 // must produce byte-identical output to the iTextSharp+BouncyCastle pipeline so
