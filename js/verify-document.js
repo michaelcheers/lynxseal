@@ -3,6 +3,38 @@
 
 'use strict';
 
+// === Load the unwrapped pdfjs-dist@1.0.813 with a runtime integrity check ===
+// 1. fetch CDN pdf.combined.js under the original SRI (verifies upstream)
+// 2. strip the outer IIFE wrapper (same substring logic as the prebake)
+// 3. hash the stripped result
+// 4. inject <script src="/lib/pdfjs-1.0.813-unwrapped.js" integrity="sha256-<hash>">
+// Browser refuses to execute the self-hosted file if its bytes don't match
+// the runtime-computed hash → tampering on either side gets caught.
+const pdfjsReady = (async () => {
+  const CDN_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js';
+  const CDN_SRI = 'sha256-3gYIJL0OvzCRSjv9rjGha+ht+C8okq/zH+fyIqX6K9g=';
+  const OPEN = '(function pdfjsWrapper() {';
+  const CLOSE = "}).call((typeof window === 'undefined') ? this : window);";
+  const resp = await fetch(CDN_URL, { integrity: CDN_SRI, referrerPolicy: 'no-referrer' });
+  if (!resp.ok) throw new Error('pdf.js CDN fetch failed: ' + resp.status);
+  const text = await resp.text();
+  const o = text.indexOf(OPEN);
+  const c = text.lastIndexOf(CLOSE);
+  if (o < 0 || c < 0) throw new Error('pdf.js IIFE markers not found');
+  const stripped = text.substring(o + OPEN.length, c);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stripped));
+  const integrity = 'sha256-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.integrity = integrity;
+    s.crossOrigin = 'anonymous';
+    s.src = '/lib/pdfjs-1.0.813-unwrapped.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('pdf.js self-origin script load failed (integrity mismatch?)'));
+    document.head.appendChild(s);
+  });
+})();
+
 // Will be filled from /api/public-context. SupportsQR controls the QR
 // verification flow (hash-based) vs PDF-only verification.
 let SUPPORTS_QR = false;
@@ -152,9 +184,11 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     const view = new Uint8Array(buffer);
 
     // === PDF parse: walk to the signature dict's /ByteRange + /Contents ===
-    // pdfjs-dist 1.0.813 attaches PDFDocument + isRef as window globals
-    // (pre-UMD-wrapper era). Lazy xref-only parsing — orders of magnitude
+    // Awaits the integrity-checked unwrapped pdfjs-dist@1.0.813 load (top of
+    // file). Once resolved, PDFDocument + isRef are window globals — the
+    // legacy pre-modern API with lazy xref-only parsing, orders of magnitude
     // faster than pdf-lib's eager full-document parse on large PDFs.
+    await pdfjsReady;
     let pdf;
     try {
       pdf = new window.PDFDocument(null, view, null);

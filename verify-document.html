@@ -15,11 +15,11 @@
   default-src 'none';
   script-src 'self' 'wasm-unsafe-eval'
     https://cdn.jsdelivr.net/npm/node-forge@1.4.0/dist/forge.min.js
-    https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js
     https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js;
   style-src 'self' 'unsafe-inline'
     https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css;
-  connect-src 'self' https://api.lynxseal.com;
+  connect-src 'self' https://api.lynxseal.com
+    https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js;
   img-src 'self' data:;
   font-src 'self' data:;
   base-uri 'none';
@@ -34,14 +34,14 @@
 <script src="/js/portal-bridge.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/argon2-init.js?v=1"></script>
-<!-- pdfjs-dist 1.0.813: earliest npm-published build, pre-UMD-wrapper era.
-     Top-level `var PDFDocument` + `function isRef` attach directly to
-     window (same pattern as the legacy SuperSigning lib/pdf.js). Used
-     parse-only to walk the AcroForm → Fields[0] → /V dict; never renders,
-     so the two known CVEs (CVE-2024-4367 font_loader.js eval, CVE-2018-5158
-     PostScript compiler) sit on code paths we never invoke. CSP without
-     'unsafe-eval' is the belt-and-braces backstop. -->
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js" integrity="sha256-3gYIJL0OvzCRSjv9rjGha+ht+C8okq/zH+fyIqX6K9g=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- pdfjs-dist 1.0.813, IIFE-wrapper stripped. Loaded dynamically by
+     verify-document.js: it fetches the CDN file with the original SRI,
+     reapplies the same regex strip, hashes the result, and injects a
+     <script integrity="sha256-..."> pointing at /lib/pdfjs-1.0.813-unwrapped.js.
+     The browser refuses to execute the self-hosted file if its bytes
+     don't match what the runtime regex would produce — tampering on
+     either side is caught. See /lib/README.md for full provenance. -->
+
 <!-- node-forge: single UMD bundle, exposes window.forge. Provides ASN.1
      parsing, PKCS#7 (CMS), X.509 cert handling, and SHA-256. Replaces
      the pkijs ESM+bare-imports rabbit hole. -->
