@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!--
+  Hidden API proxy. Lives on portal.lynxseal.com (which is on the API CORS
+  allowlist), embedded as an invisible iframe by wrapper-origin portal
+  pages. They postMessage `{ id, path, init }` describing the request; we
+  fetch api.lynxseal.com on their behalf and postMessage the response
+  `{ id, ok, status, statusText, headers, body }` back.
+
+  Trust model: we filter incoming messages by event.origin against an
+  allowlist of known wrapper origins, so random pages can't piggyback this
+  to call the API as our users.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>API proxy</title>
+</head>
+<body>
+<script>
+'use strict';
+
+const API_BASE = 'https://api.lynxseal.com';
+
+// Wrapper origins permitted to use this proxy. Mirrors the API's CORS
+// allowlist conceptually — the API only trusts portal.lynxseal.com, so
+// here we re-enforce who's allowed to ride through portal.
+const ALLOWED_WRAPPER_ORIGINS = new Set([
+  'https://certify-stibc-test.lynxseal.com',
+  'https://verify-stibc-test.lynxseal.com',
+  // 'https://certify.stibc.org',
+  // 'https://verify.stibc.org',
+  // 'https://certify.atio.on.ca',
+  // 'https://verify.atio.on.ca',
+  // 'https://certify.atim.mb.ca',
+  // 'https://verify.atim.mb.ca',
+]);
+
+window.addEventListener('message', async (e) => {
+  if (!ALLOWED_WRAPPER_ORIGINS.has(e.origin)) return;
+  const m = e.data;
+  if (!m || typeof m !== 'object' || typeof m.id === 'undefined') return;
+
+  const { id, path, init } = m;
+  // Refuse off-API paths to keep this purely an API proxy.
+  if (typeof path !== 'string' || !path.startsWith('/api/')) {
+    e.source.postMessage({ id, error: 'invalid path' }, e.origin);
+    return;
+  }
+
+  try {
+    const resp = await fetch(API_BASE + path, init || {});
+    // Response body could be JSON, text, or binary (PDF blob). Pull as
+    // ArrayBuffer — works for everything, and structured-cloneable across
+    // postMessage. Caller reconstructs the right shape from headers.
+    const body = await resp.arrayBuffer();
+    const headers = {};
+    resp.headers.forEach((v, k) => { headers[k] = v; });
+    e.source.postMessage({
+      id,
+      ok: resp.ok,
+      status: resp.status,
+      statusText: resp.statusText,
+      headers,
+      body,
+    }, e.origin, [body]);  // transfer the ArrayBuffer to avoid the copy
+  } catch (err) {
+    e.source.postMessage({ id, error: (err && err.message) || String(err) }, e.origin);
+  }
+});
+
+// Signal to the embedder that we're ready to receive requests.
+window.parent.postMessage({ type: 'api-proxy-ready' }, '*');
+</script>
+</body>
+</html>
