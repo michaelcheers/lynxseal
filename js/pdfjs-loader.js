@@ -179,18 +179,11 @@
         }
 
         // Monkey-patch fetch. Cmaps, fonts, wasm, iccs, locale .ftl files
-        // all go through fetch() inside the bundled viewer.mjs. fetch() can
-        // be invoked with a string, a Request object (has .url), or a URL
-        // object (has .href) — pdf.js's L10n bundle loader uses URL objects.
-        function urlOf(input) {
-          if (typeof input === 'string') return input;
-          if (input instanceof URL) return input.href;
-          if (input && typeof input.url === 'string') return input.url;
-          return null;
-        }
+        // all go through fetch() inside the bundled viewer.mjs.
         const origFetch = window.fetch.bind(window);
         window.fetch = function (input, init) {
-          const blob = resolveBlob(urlOf(input));
+          const url = typeof input === 'string' ? input : (input && input.url);
+          const blob = resolveBlob(url);
           if (blob) return origFetch(blob, init);
           return origFetch(input, init);
         };
@@ -198,7 +191,7 @@
         // Same for Worker — pdf.js does new Worker(workerSrc, { type:'module' }).
         const OrigWorker = window.Worker;
         function PatchedWorker(script, opts) {
-          const blob = resolveBlob(urlOf(script) || (typeof script === 'string' ? script : null));
+          const blob = resolveBlob(script);
           return new OrigWorker(blob || script, opts);
         }
         PatchedWorker.prototype = OrigWorker.prototype;
