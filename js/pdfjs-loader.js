@@ -70,24 +70,8 @@
     for (const [name, bytes] of Object.entries(files)) {
       if (name.endsWith('/')) continue; // skip directory entries
       if (name === 'web/viewer.css') continue; // handled below
-      if (name === 'web/viewer.mjs') continue; // handled below
       const mime = _guessMime(name);
       blobUrls[name] = URL.createObjectURL(new Blob([bytes], { type: mime }));
-    }
-    if (files['web/viewer.mjs']) {
-      // Neuter the viewer's auto-open of a default PDF: the upstream
-      // viewer.mjs reads defaultUrl ("compressed.tracemonkey-pldi-09.pdf")
-      // and tries to `new URL(file)` on it, which throws under our
-      // about:srcdoc context. We open() with our own data afterwards.
-      // Also disable persistent Preferences (would override our config
-      // and log a warning otherwise).
-      let mjs = new TextDecoder('utf-8').decode(files['web/viewer.mjs']);
-      mjs = mjs.replace('"compressed.tracemonkey-pldi-09.pdf"', '""');
-      mjs = mjs.replace(
-        /defaultOptions\.disablePreferences\s*=\s*\{[\s\S]*?value:\s*false/,
-        m => m.replace('value: false', 'value: true')
-      );
-      blobUrls['web/viewer.mjs'] = URL.createObjectURL(new Blob([mjs], { type: 'text/javascript' }));
     }
     if (files['web/viewer.css']) {
       let css = new TextDecoder('utf-8').decode(files['web/viewer.css']);
@@ -138,11 +122,14 @@
   }
 
   // Build the inline init script we splice into viewer.html. This runs INSIDE
-  // the iframe before viewer.mjs loads. It monkey-patches fetch + Worker so
-  // runtime asset requests (cmaps, fonts, wasm, locale .ftl bundles) are
-  // served from blob URLs. The auto-open / preferences toggles happen at
-  // source level in _extractZip's viewer.mjs rewrite (more reliable than
-  // a setter trap on window.PDFViewerApplicationOptions).
+  // the iframe before viewer.mjs loads. It:
+  //   - monkey-patches fetch + Worker so the viewer's runtime asset requests
+  //     (cmaps, fonts, wasm, locale .ftl bundles) get served from blob URLs;
+  //   - disables the viewer's auto-open of a default PDF (we open() with our
+  //     own data later) by zeroing AppOptions.defaultUrl before viewer.mjs
+  //     reads it. Without this, the viewer's startup tries to open
+  //     compressed.tracemonkey-pldi-09.pdf — relative to about:srcdoc —
+  //     which throws "Invalid PDF url data".
   function _buildInitScript(blobUrls) {
     // Serializing the blobUrls map as JSON is fine — values are short
     // blob:https://... URLs from the parent's origin.
@@ -150,6 +137,21 @@
     return `
       (function () {
         const BLOB_URLS = ${mapJson};
+
+        // Prevent the viewer from auto-opening a default PDF on startup,
+        // and disable persistent Preferences (which would otherwise override
+        // our AppOptions and spam the console with a warning about it).
+        Object.defineProperty(window, 'PDFViewerApplicationOptions', {
+          configurable: true,
+          get() { return this._pdfvopts; },
+          set(v) {
+            this._pdfvopts = v;
+            if (v && typeof v.set === 'function') {
+              try { v.set('defaultUrl', ''); } catch {}
+              try { v.set('disablePreferences', true); } catch {}
+            }
+          },
+        });
 
         // Pattern-based blob lookup. The viewer (and viewer.mjs at runtime)
         // constructs URLs like "../web/cmaps/Adobe-CNS1-UCS2.bcmap" relative
