@@ -47,11 +47,10 @@ async function _sha256(bytes) {
   return { hex, b64: btoa(bin) };
 }
 
-// Fetch a remote script, sha256-verify against pin, then evaluate it in the
-// SW global scope. We can't use the usual blob-URL + importScripts trick
-// here because Service Worker contexts don't expose URL.createObjectURL
-// (object URLs are tied to document lifecycle). Function() evaluation runs
-// the UMD bundle whose self-detection lands on `self.fflate = factory()`.
+// Fetch a remote script, sha256-verify against pin, then importScripts it
+// from a blob URL of the verified bytes. The blob: importScripts call is
+// synchronous — equivalent to what <script integrity="..."> would do on
+// the page side, which importScripts doesn't natively support.
 let _fflateReady = null;
 function ensureFflate() {
   if (_fflateReady) return _fflateReady;
@@ -63,12 +62,8 @@ function ensureFflate() {
     if (b64 !== FFLATE_SHA256_B64) {
       throw new Error('SW: fflate integrity check failed. Expected sha256-' + FFLATE_SHA256_B64 + ', got sha256-' + b64);
     }
-    const text = new TextDecoder('utf-8').decode(bytes);
-    // eslint-disable-next-line no-new-func
-    new Function(text)();
-    if (typeof self.fflate?.unzipSync !== 'function') {
-      throw new Error('SW: fflate loaded but did not attach to self.fflate');
-    }
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/javascript' }));
+    try { importScripts(url); } finally { URL.revokeObjectURL(url); }
   })();
   return _fflateReady;
 }
