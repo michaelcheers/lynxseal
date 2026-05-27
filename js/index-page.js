@@ -67,22 +67,20 @@ function addPDFToPreview(oldIframe, pdf) {
     iframe.setAttribute('id', oldIframe.getAttribute('id'));
     oldIframe.remove();
   };
-  if (navigator.pdfViewerEnabled ?? ('PDF Viewer' in navigator.plugins)) {
-    const url = URL.createObjectURL(pdf);
-    iframe.setAttribute('src', url);
-    iframe.onload = () => { URL.revokeObjectURL(url); resetIframe(); };
-  } else {
-    // Load the pdf.js viewer via the audit-friendly loader: it extracts the
-    // committed upstream release ZIP client-side, hash-verifies it, and
-    // wires viewer.html via srcdoc + blob URLs. See pdfjs-loader.js.
-    window.LynxsealPdfjs.openViewer(iframe)
-      .then(async app => { await app.open(await pdf.arrayBuffer()); })
-      .catch(reportErrorAlert)
-      .finally(resetIframe);
-  }
+  // Always use the cross-origin pdf.js viewer (pdfjs.lynxseal.com) — the
+  // native browser PDF viewer gets blocked by Brave Shields and stricter
+  // sandbox/CSP contexts, and hosting pdf.js on its own origin contains
+  // any pdf.js-side XSS to that origin.
+  window.LynxsealPdfjs.openViewer(iframe)
+    .then(async app => { await app.open({ data: await pdf.arrayBuffer() }); })
+    .catch(reportErrorAlert)
+    .finally(resetIframe);
 }
 
-// Drag-to-position stamp overlay (every-page mode) ---------------------------
+// Stamp image dimensions helper — only used to seed the initial stamp size
+// passed to the viewer (the actual overlay creation, drag handling, and
+// viewport↔PDF coord conversions all live in the cross-origin viewer's
+// bridge script, since the parent can't touch viewer DOM).
 
 function imageDimensions(dataURL) {
   return new Promise((resolve, reject) => {
@@ -91,39 +89,6 @@ function imageDimensions(dataURL) {
     img.onerror = () => reject('There was some problem with the image.');
     img.src = dataURL;
   });
-}
-function dragElement(elmnt, _bounds, frameContent) {
-  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-  const bounds = [..._bounds];
-  bounds[2] -= +elmnt.style.width.slice(0, -2);
-  bounds[3] -= +elmnt.style.height.slice(0, -2);
-  elmnt.onmousedown = (e) => {
-    e = e || window.event; e.preventDefault();
-    pos3 = e.clientX; pos4 = e.clientY;
-    frameContent.addEventListener('mousemove', drag);
-    frameContent.addEventListener('mouseup', close);
-  };
-  function drag(e) {
-    e = e || window.event; e.preventDefault();
-    pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
-    pos3 = e.clientX; pos4 = e.clientY;
-    let yC = elmnt.offsetTop - pos2, xC = elmnt.offsetLeft - pos1;
-    if (xC < bounds[0]) xC = bounds[0]; else if (xC > bounds[2]) xC = bounds[2];
-    if (yC < bounds[1]) yC = bounds[1]; else if (yC > bounds[3]) yC = bounds[3];
-    elmnt.style.top = yC + 'px'; elmnt.style.left = xC + 'px';
-  }
-  function close() {
-    frameContent.removeEventListener('mousemove', drag);
-    frameContent.removeEventListener('mouseup', close);
-  }
-}
-function getViewerRect(viewport, x, y, width, height) {
-  const rect = viewport.convertToViewportRectangle([x, y, x + width, y + height]);
-  return [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.abs(rect[0] - rect[2]), Math.abs(rect[1] - rect[3])];
-}
-function getPDFRect(viewport, x, y, width, height) {
-  const p = viewport.convertToPdfPoint(x, y + height), p2 = viewport.convertToPdfPoint(x + width, y);
-  return [...p, p2[0] - p[0], p2[1] - p[1]];
 }
 
 // Declaration build helpers (from old Razor inline) --------------------------
@@ -570,7 +535,7 @@ function reportError(e, progressBar, progressMsg, mainProgressMsg) {
   progressMsg.innerText = msg;
 }
 
-function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
+async function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
   try {
     modalDlg.style.display = '';
     const getStampedPackage = () => stampEveryPage ? _stampedPackage : pkg;
@@ -611,21 +576,15 @@ function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
         if (stampEveryPage) _stampedPackage = await applyStampsFn();
         const asBlob = new Blob([getStampedPackage()], { type: 'application/pdf' });
         const stampedPdfFrame = modalDlg.querySelector('[name=stampedPdfFrame]');
-        if (window.DeclarationContext.association.name === 'ATIO') {
-          window.LynxsealPdfjs.openViewer(stampedPdfFrame)
-            .then(async app => {
-              await app.open(await asBlob.arrayBuffer());
-              const doc = stampedPdfFrame.contentDocument;
-              for (const id of ['print', 'download', 'openFile', 'viewBookmark']) {
-                const el = doc.getElementById(id); if (el) el.style.display = 'none';
-              }
-            })
-            .catch(reportErrorAlert);
-        } else {
-          const url = URL.createObjectURL(asBlob);
-          stampedPdfFrame.src = url;
-          stampedPdfFrame.onload = () => URL.revokeObjectURL(url);
-        }
+        // Cross-origin viewer (pdfjs.lynxseal.com) — toolbar tweaks happen
+        // inside the viewer via hideToolbarIds (the bridge script applies
+        // them after PDFViewerApplication.open). ATIO hides print/download.
+        const hideToolbarIds = window.DeclarationContext.association.name === 'ATIO'
+          ? ['print', 'download', 'openFile', 'viewBookmark']
+          : undefined;
+        window.LynxsealPdfjs.openViewer(stampedPdfFrame)
+          .then(async app => { await app.open({ data: await asBlob.arrayBuffer(), hideToolbarIds }); })
+          .catch(reportErrorAlert);
         stampedPdfFrame.style.display = '';
         modalDlg.querySelector('[name=stampedPdfFramePlaceholder]').style.display = 'none';
       } catch (e) { reportErrorAlert(e); }
@@ -707,41 +666,28 @@ function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
     if (stampEveryPage) {
       backButton();
       const pdfFrame = modalDlg.querySelector('[name=pdfFrame]');
-      window.LynxsealPdfjs.openViewer(pdfFrame).then(async PDFViewerApplication => {
-        try {
-          await PDFViewerApplication.open(await uint8ArrayToBase64URL(pkg, 'application/pdf'));
-          await PDFViewerApplication.pdfViewer.pagesPromise;
-          const stampSrc = URL.createObjectURL(stamp);
-          let img = await imageDimensions(stampSrc);
-          if (img.width > 300) [img.width, img.height] = [img.width / 2, img.height / 2];
-          const stamps = new Map();
-          const drawStamps = () => {
-            try {
-              for (const [, { img }] of stamps) img.remove();
-              stamps.clear();
-              for (let pageNum = 1; pageNum < PDFViewerApplication.pagesCount; pageNum++) {
-                const pageView = PDFViewerApplication.pdfViewer.getPageView(pageNum);
-                const imgRect = getViewerRect(pageView.viewport, (pageView.viewport.viewBox[2] - 100) / 2, 3, (img.width / 2) | 0, (img.height / 2) | 0);
-                const overlay = document.createElement('img');
-                overlay.draggable = true; overlay.src = stampSrc;
-                Object.assign(overlay.style, { position: 'absolute', cursor: 'move', left: `${imgRect[0]}px`, top: `${imgRect[1]}px`, width: `${imgRect[2]}px`, height: `${imgRect[3]}px`, zIndex: 999 });
-                pageView.div.appendChild(overlay);
-                dragElement(overlay, [0, 0, pageView.viewport.width, pageView.viewport.height], pdfFrame.contentDocument);
-                stamps.set(pageNum, { img: overlay, viewport: pageView.viewport });
-              }
-            } catch (e) { reportErrorAlert(e); }
-          };
-          PDFViewerApplication.eventBus.on('scalechanging', () => drawStamps());
-          drawStamps();
-          applyStampsFn = async () => {
-            const stampObj = {};
-            for (const [pageNum, stampInfo] of stamps) {
-              stampObj[pageNum + 1] = getPDFRect(stampInfo.viewport, +stampInfo.img.style.left.slice(0, -2), +stampInfo.img.style.top.slice(0, -2), +stampInfo.img.style.width.slice(0, -2), +stampInfo.img.style.height.slice(0, -2));
-            }
-            return await window.PDFSigningClient.StampDocument(pkg, new Uint8Array(await stamp.arrayBuffer()), JSON.stringify(stampObj));
-          };
-        } catch (e) { reportErrorAlert(e); }
-      }).catch(reportErrorAlert);
+      // Drag-positioning runs inside the cross-origin viewer via the bridge —
+      // the parent can't touch viewer DOM. We send the PDF bytes, the stamp
+      // image as a data URL (postMessage-cloneable cross-origin), and the
+      // stamp's PDF-unit size for initial placement. The bridge handles all
+      // overlay creation + drag handlers + scale-change redraws. On submit
+      // we ask for the final per-page rects in PDF coords.
+      const stampBytes = new Uint8Array(await stamp.arrayBuffer());
+      const stampDataUrl = await uint8ArrayToBase64URL(stampBytes, stamp.type || 'image/png');
+      let imgDims = await imageDimensions(stampDataUrl);
+      if (imgDims.width > 300) [imgDims.width, imgDims.height] = [imgDims.width / 2, imgDims.height / 2];
+      const stampWidth = (imgDims.width / 2) | 0;   // matches old (img.width / 2) | 0 calc
+      const stampHeight = (imgDims.height / 2) | 0;
+      let appShim;
+      try {
+        appShim = await window.LynxsealPdfjs.openViewer(pdfFrame);
+        await appShim.open({ data: pkg.buffer.slice(pkg.byteOffset, pkg.byteOffset + pkg.byteLength) });
+        await appShim.addStamps({ stampSrc: stampDataUrl, stampWidth, stampHeight });
+      } catch (e) { reportErrorAlert(e); return; }
+      applyStampsFn = async () => {
+        const rects = await appShim.getStampRects();
+        return await window.PDFSigningClient.StampDocument(pkg, stampBytes, JSON.stringify(rects));
+      };
     } else signPhase();
   } catch (e) { reportErrorAlert(e); }
 }
