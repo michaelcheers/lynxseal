@@ -662,12 +662,27 @@ async function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
             const salt = window.PDFSigningClient.GenerateSalt();
             const derivedKey = await window.deriveKeyWithArgon2(encryptionKey, salt);
             const encryptedPDF = await window.PDFSigningClient.EncryptFileWithDerivedKey(signedPDF, derivedKey, salt);
-            const presigned = await api.post('/api/upload-document', { qrId: window.qrId });
             const encryptedBlob = new Blob([encryptedPDF], { type: 'application/octet-stream' });
+            // S3 bucket has Object Lock default retention, which rejects PUTs
+            // without a checksum header. Compute SHA-256 up front so the
+            // backend can sign x-amz-checksum-sha256 into the pre-signed URL
+            // with the same value we'll send on the PUT.
+            const blobBuf = await encryptedBlob.arrayBuffer();
+            const digestBuf = await crypto.subtle.digest('SHA-256', blobBuf);
+            const digestB64 = btoa(String.fromCharCode(...new Uint8Array(digestBuf)));
+            const presigned = await api.post('/api/upload-document', { qrId: window.qrId, sha256: digestB64 });
             if (!(modalDlg.querySelector('[name=postStamping]').style.display === '' && modalDlg.style.display === '')) return;
             modalDlg.querySelector('[name=backButton]').style.display = 'none';
             modalDlg.onclick = () => location.reload();
-            const s3 = await fetch(presigned.uploadUrl, { method: 'PUT', body: encryptedBlob, headers: { 'Content-Type': 'application/octet-stream' } });
+            const s3 = await fetch(presigned.uploadUrl, {
+              method: 'PUT',
+              body: encryptedBlob,
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'x-amz-sdk-checksum-algorithm': 'SHA256',
+                'x-amz-checksum-sha256': digestB64,
+              },
+            });
             if (!s3.ok) throw new Error(`Failed to upload to S3: ${s3.status}`);
           }
           await downloadUint8Array('application/pdf', signedPDF, fileName, handle);
