@@ -67,14 +67,21 @@ function addPDFToPreview(oldIframe, pdf) {
     iframe.setAttribute('id', oldIframe.getAttribute('id'));
     oldIframe.remove();
   };
-  // Always use the cross-origin pdf.js viewer (pdfjs.lynxseal.com) — the
-  // native browser PDF viewer gets blocked by Brave Shields and stricter
-  // sandbox/CSP contexts, and hosting pdf.js on its own origin contains
-  // any pdf.js-side XSS to that origin.
-  window.LynxsealPdfjs.openViewer(iframe)
-    .then(async app => { await app.open({ data: await pdf.arrayBuffer() }); })
-    .catch(reportErrorAlert)
-    .finally(resetIframe);
+  // Prefer the browser's native PDF viewer when available — lighter, no
+  // extra fetch. The Brave-blocked-nested-iframe problem was solved by the
+  // wrapper SW (portal pages now run directly on the wrapper origin
+  // instead of being inner-iframed by it), so the native viewer here is a
+  // top-level iframe and Brave doesn't reject it.
+  if (navigator.pdfViewerEnabled ?? ('PDF Viewer' in navigator.plugins)) {
+    const url = URL.createObjectURL(pdf);
+    iframe.setAttribute('src', url);
+    iframe.onload = () => { URL.revokeObjectURL(url); resetIframe(); };
+  } else {
+    window.LynxsealPdfjs.openViewer(iframe)
+      .then(async app => { await app.open({ data: await pdf.arrayBuffer() }); })
+      .catch(reportErrorAlert)
+      .finally(resetIframe);
+  }
 }
 
 // Stamp image dimensions helper — only used to seed the initial stamp size
@@ -576,15 +583,23 @@ async function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
         if (stampEveryPage) _stampedPackage = await applyStampsFn();
         const asBlob = new Blob([getStampedPackage()], { type: 'application/pdf' });
         const stampedPdfFrame = modalDlg.querySelector('[name=stampedPdfFrame]');
-        // Cross-origin viewer (pdfjs.lynxseal.com) — toolbar tweaks happen
-        // inside the viewer via hideToolbarIds (the bridge script applies
-        // them after PDFViewerApplication.open). ATIO hides print/download.
-        const hideToolbarIds = window.DeclarationContext.association.name === 'ATIO'
-          ? ['print', 'download', 'openFile', 'viewBookmark']
-          : undefined;
-        window.LynxsealPdfjs.openViewer(stampedPdfFrame)
-          .then(async app => { await app.open({ data: await asBlob.arrayBuffer(), hideToolbarIds }); })
-          .catch(reportErrorAlert);
+        // ATIO uses pdf.js so we can hide the print/download toolbar buttons
+        // via the bridge's hideToolbarIds option (native viewer has no way
+        // to suppress its toolbar). Other tenants get the native viewer.
+        if (window.DeclarationContext.association.name === 'ATIO') {
+          window.LynxsealPdfjs.openViewer(stampedPdfFrame)
+            .then(async app => {
+              await app.open({
+                data: await asBlob.arrayBuffer(),
+                hideToolbarIds: ['print', 'download', 'openFile', 'viewBookmark'],
+              });
+            })
+            .catch(reportErrorAlert);
+        } else {
+          const url = URL.createObjectURL(asBlob);
+          stampedPdfFrame.src = url;
+          stampedPdfFrame.onload = () => URL.revokeObjectURL(url);
+        }
         stampedPdfFrame.style.display = '';
         modalDlg.querySelector('[name=stampedPdfFramePlaceholder]').style.display = 'none';
       } catch (e) { reportErrorAlert(e); }
