@@ -123,13 +123,12 @@
 
   // Build the inline init script we splice into viewer.html. This runs INSIDE
   // the iframe before viewer.mjs loads. It:
-  //   - monkey-patches fetch + Worker so the viewer's runtime asset requests
-  //     (cmaps, fonts, wasm, locale .ftl bundles) get served from blob URLs;
-  //   - disables the viewer's auto-open of a default PDF (we open() with our
-  //     own data later) by zeroing AppOptions.defaultUrl before viewer.mjs
-  //     reads it. Without this, the viewer's startup tries to open
-  //     compressed.tracemonkey-pldi-09.pdf — relative to about:srcdoc —
-  //     which throws "Invalid PDF url data".
+  //   - rewrites runtime URLs (cMapUrl, standardFontDataUrl, workerSrc,
+  //     wasmUrl, iccUrl, sandboxBundleSrc) to point at a virtual prefix
+  //     "lynxseal://pdfjs/" that we then intercept;
+  //   - monkey-patches window.fetch + Worker + URL parsing so any request
+  //     under that prefix is served from the blob URL map injected by the
+  //     parent.
   function _buildInitScript(blobUrls) {
     // Serializing the blobUrls map as JSON is fine — values are short
     // blob:https://... URLs from the parent's origin.
@@ -137,20 +136,6 @@
     return `
       (function () {
         const BLOB_URLS = ${mapJson};
-
-        // Prevent the viewer from auto-opening a default PDF on startup.
-        // viewer.mjs reads PDFViewerApplicationOptions.defaultUrl during
-        // run() — setting it to empty string short-circuits that path.
-        Object.defineProperty(window, 'PDFViewerApplicationOptions', {
-          configurable: true,
-          get() { return this._pdfvopts; },
-          set(v) {
-            this._pdfvopts = v;
-            if (v && typeof v.set === 'function') {
-              try { v.set('defaultUrl', ''); } catch {}
-            }
-          },
-        });
 
         // Pattern-based blob lookup. The viewer (and viewer.mjs at runtime)
         // constructs URLs like "../web/cmaps/Adobe-CNS1-UCS2.bcmap" relative
@@ -226,18 +211,9 @@
       html = html.split('"' + token + '"').join('"' + blob + '"');
     }
 
-    // Inject:
-    //   1. <base href="<parent-origin>/"> at the very start of <head>.
-    //      iframe.srcdoc gives the document a location of "about:srcdoc",
-    //      which is opaque — relative URL resolution (used by L10n bundle
-    //      loading, etc.) throws "Invalid URL". A <base> fixes that, and
-    //      our fetch interceptor then maps the resolved URLs to blobs.
-    //   2. Our init script just before </head> (after the base tag is in
-    //      place so any URL parsing in the init script also has a base).
-    //      It must run before viewer.mjs (modules defer by default; a
-    //      non-module inline <script> in <head> beats them to execution).
-    const baseTag = '<base href="' + location.origin + '/">';
-    html = html.replace(/<head>/i, '<head>' + baseTag);
+    // Inject init script just before the closing </head>. It must run before
+    // viewer.mjs (which is loaded with type=module — modules defer by default,
+    // so a non-module inline script in <head> beats them to execution).
     html = html.replace(
       /<\/head>/i,
       '<script>' + initScript + '<\/script></head>'
