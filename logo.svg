@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fcd34d"/>
+      <stop offset="100%" style="stop-color:#b45309"/>
+    </linearGradient>
+    <linearGradient id="eyeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6ee7b7"/>
+      <stop offset="100%" style="stop-color:#059669"/>
+    </linearGradient>
+  </defs>
+  <!-- Gold coin base -->
+  <circle cx="24" cy="24" r="22" fill="url(#goldGradient)"/>
+  <!-- Embossed rims -->
+  <circle cx="24" cy="24" r="19" fill="none" stroke="#fef3c7" stroke-width="1.5"/>
+  <circle cx="24" cy="24" r="16" fill="none" stroke="#fef3c7" stroke-width="0.5"/>
+  <!-- Lynx face -->
+  <path d="M24 36 Q17 34 15 26 Q15 20 18 17 L15 10 L20 14 Q22 12 24 12 Q26 12 28 14 L33 10 L30 17 Q33 20 33 26 Q31 34 24 36Z" fill="#92400e" opacity="0.3"/>
+  <path d="M24 36 Q17 34 15 26 Q15 20 18 17 L15 10 L20 14 Q22 12 24 12 Q26 12 28 14 L33 10 L30 17 Q33 20 33 26 Q31 34 24 36Z" fill="none" stroke="#92400e" stroke-width="1.5"/>
+  <!-- Eyes -->
+  <ellipse cx="20" cy="22" rx="2.5" ry="3" fill="url(#eyeGradient)"/>
+  <ellipse cx="28" cy="22" rx="2.5" ry="3" fill="url(#eyeGradient)"/>
+  <ellipse cx="20" cy="22" rx="0.8" ry="2.2" fill="#1c1917"/>
+  <ellipse cx="28" cy="22" rx="0.8" ry="2.2" fill="#1c1917"/>
+  <circle cx="19" cy="21" r="0.8" fill="white" opacity="0.8"/>
+  <circle cx="27" cy="21" r="0.8" fill="white" opacity="0.8"/>
+</svg>

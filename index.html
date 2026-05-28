@@ -471,8 +471,11 @@
        SW lets the request fall through to it. -->
   <header class="topbar">
     <a class="wordmark" id="tenantWordmark" href="/" aria-label="Home">
-      <img id="tenantLogo" src="/logo.png" alt="" onerror="this.remove()">
-      <span id="tenantName">LynxSeal</span>
+      <!-- Default to the LynxSeal SVG (served from /app/lynxseal/logo.svg).
+           When the wrapper SW is in front, the DOMContentLoaded handler
+           below swaps src to /logo.png — the wrapper has its own logo
+           file at the repo root and the SW lets it fall through. -->
+      <img id="tenantLogo" src="/logo.svg" alt="LynxSeal">
     </a>
     <span class="vr"></span>
     <span class="breadcrumb">
@@ -886,13 +889,13 @@
   document.addEventListener('DOMContentLoaded', () => {
 
     // 0) Tenant branding — when the wrapper SW is in front of the portal,
-    //    /__tenant-globals.js sets window.ORG_NAME. Use it as the wordmark
-    //    text and reveal the "Powered by LynxSeal" attribution. On the
-    //    bare portal origin window.ORG_NAME is undefined and nothing
-    //    changes (wordmark stays "LynxSeal", no attribution).
+    //    /__tenant-globals.js sets window.ORG_NAME. Swap the wordmark logo
+    //    to the wrapper's /logo.png (the SW serves it locally) and reveal
+    //    the "Powered by LynxSeal" attribution. On the bare portal origin
+    //    window.ORG_NAME is undefined and we keep the default /logo.svg.
     if (window.ORG_NAME && window.ORG_NAME !== 'LynxSeal') {
-      const nameEl = document.getElementById('tenantName');
-      if (nameEl) nameEl.textContent = window.ORG_NAME;
+      const logoEl = document.getElementById('tenantLogo');
+      if (logoEl) { logoEl.src = '/logo.png'; logoEl.alt = window.ORG_NAME; }
       document.querySelectorAll('.powered-by, .powered-sep').forEach(el => el.hidden = false);
       document.title = window.ORG_NAME + ' · Certify a translation';
     }
