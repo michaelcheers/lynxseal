@@ -310,8 +310,9 @@
   }
   .topbar .wordmark img { max-height: 32px; max-width: 140px; object-fit: contain; display: block; }
   .topbar .breadcrumb { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
-  .topbar .powered-by { font-size: 11.5px; color: var(--dim); letter-spacing: 0.01em; }
-  .topbar .powered-by em { font-family: var(--serif); font-style: italic; color: var(--ink-2); font-size: 13px; }
+  .topbar .powered-by { font-size: 11.5px; color: var(--dim); letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+  .topbar .powered-by:hover { color: var(--ink-2); }
+  .topbar .powered-by .powered-logo { height: 18px; width: 18px; display: block; }
   .topbar-spacer { flex: 1; }
   /* Auth-state visibility — driven by body class set by /__tenant-globals.js
      (wrapper SW). On bare portal.lynxseal.com neither class is set, so both
@@ -483,11 +484,11 @@
       <span class="fr-only">Certifier une traduction</span>
     </span>
     <span class="vr powered-sep" hidden></span>
-    <span class="powered-by" hidden>
+    <a class="powered-by" href="https://lynxseal.com" target="_blank" rel="noopener" hidden>
       <span class="en-only">Powered by</span>
       <span class="fr-only">Propulsé par</span>
-      <em>LynxSeal</em>
-    </span>
+      <img src="/logo.svg" alt="LynxSeal" class="powered-logo">
+    </a>
     <div class="topbar-spacer"></div>
     <a href="/verify-document.html" class="btn bare sm" title="Verify">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -888,11 +889,20 @@
   //    index-page.js.
   document.addEventListener('DOMContentLoaded', () => {
 
-    // 0) Tenant branding — when the wrapper SW is in front of the portal,
-    //    /__tenant-globals.js sets window.ORG_NAME. Swap the wordmark logo
-    //    to the wrapper's /logo.png (the SW serves it locally) and reveal
-    //    the "Powered by LynxSeal" attribution. On the bare portal origin
-    //    window.ORG_NAME is undefined and we keep the default /logo.svg.
+    // 0) Tenant branding. The wrapper SW injects /__tenant-globals.js which
+    //    sets window.ORG_NAME; absence of that var = bare portal.
+    //    Wordmark links to the tenant's top-level domain — we derive it by
+    //    stripping the first subdomain label of location.hostname:
+    //      portal.lynxseal.com         → lynxseal.com
+    //      certify.stibc.org           → stibc.org
+    //      certify.atio.on.ca          → atio.on.ca
+    //      certify-stibc-test.lynxseal.com → lynxseal.com
+    const host = location.hostname;
+    const i = host.indexOf('.');
+    const homeUrl = i > 0 ? 'https://' + host.substring(i + 1) : null;
+    const wordmark = document.getElementById('tenantWordmark');
+    if (wordmark && homeUrl) wordmark.href = homeUrl;
+
     if (window.ORG_NAME && window.ORG_NAME !== 'LynxSeal') {
       const logoEl = document.getElementById('tenantLogo');
       if (logoEl) { logoEl.src = '/logo.png'; logoEl.alt = window.ORG_NAME; }
