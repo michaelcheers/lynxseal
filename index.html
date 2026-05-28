@@ -305,12 +305,19 @@
   .topbar .wordmark {
     font-family: var(--serif); font-style: italic; font-weight: 400;
     font-size: 22px; letter-spacing: -0.01em; color: var(--ink);
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: 8px;
+    text-decoration: none;
   }
-  .topbar .wordmark .seal { width: 22px; height: 22px; color: var(--accent); }
+  .topbar .wordmark img { max-height: 32px; max-width: 140px; object-fit: contain; display: block; }
   .topbar .breadcrumb { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
-  .topbar .breadcrumb svg { color: var(--dim); }
+  .topbar .powered-by { font-size: 11.5px; color: var(--dim); letter-spacing: 0.01em; }
+  .topbar .powered-by em { font-family: var(--serif); font-style: italic; color: var(--ink-2); font-size: 13px; }
   .topbar-spacer { flex: 1; }
+  /* Auth-state visibility — driven by body class set by /__tenant-globals.js
+     (wrapper SW). On bare portal.lynxseal.com neither class is set, so both
+     entries show; the wrapper sets exactly one. */
+  body.lynxseal-auth .lynxseal-anon-only { display: none; }
+  body.lynxseal-anon .lynxseal-auth-only { display: none; }
 
   .app-body { flex: 1; display: flex; min-height: 0; }
 
@@ -456,24 +463,27 @@
 
 <main id="mainContent" style="display:none">
 
-  <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+  <!-- ── Top bar ─────────────────────────────────────────────────────────
+       Tenant identity comes from window.ORG_NAME (set by the wrapper
+       SW's /__tenant-globals.js). On the bare portal origin neither is
+       set and the bar shows the LynxSeal wordmark on its own.
+       Each wrapper drops its own /logo.png in its repo root, and the
+       SW lets the request fall through to it. -->
   <header class="topbar">
-    <span class="wordmark">
-      <!-- Small wax-seal SVG glyph — same brick-red as the accent token. -->
-      <svg class="seal" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-        <circle cx="11" cy="11" r="9.25" fill="currentColor" opacity="0.18"/>
-        <circle cx="11" cy="11" r="6.5" fill="currentColor"/>
-        <path d="M11 4.5l1.8 3.7 4 .6-2.9 2.85.68 4-3.58-1.9-3.58 1.9.68-4L5.2 8.8l4-.6z" fill="#FBF8F0"/>
-      </svg>
-      LynxSeal
-    </span>
+    <a class="wordmark" id="tenantWordmark" href="/" aria-label="Home">
+      <img id="tenantLogo" src="/logo.png" alt="" onerror="this.remove()">
+      <span id="tenantName">LynxSeal</span>
+    </a>
     <span class="vr"></span>
     <span class="breadcrumb">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="M2 4.5C2 3.67 2.67 3 3.5 3h2.69c.4 0 .78.16 1.06.44L8.31 4.5h4.19c.83 0 1.5.67 1.5 1.5v6c0 .83-.67 1.5-1.5 1.5h-9C2.67 13.5 2 12.83 2 12V4.5z" stroke="currentColor" stroke-width="1.2"/>
-      </svg>
       <span class="en-only">Certify a translation</span>
       <span class="fr-only">Certifier une traduction</span>
+    </span>
+    <span class="vr powered-sep" hidden></span>
+    <span class="powered-by" hidden>
+      <span class="en-only">Powered by</span>
+      <span class="fr-only">Propulsé par</span>
+      <em>LynxSeal</em>
     </span>
     <div class="topbar-spacer"></div>
     <a href="/verify-document.html" class="btn bare sm" title="Verify">
@@ -483,6 +493,18 @@
       </svg>
       <span class="en-only">Verify</span>
       <span class="fr-only">Vérifier</span>
+    </a>
+    <a href="/how-it-works" class="btn bare sm">
+      <span class="en-only">FAQ</span>
+      <span class="fr-only">FAQ</span>
+    </a>
+    <a href="/sign-in" class="btn bare sm lynxseal-anon-only">
+      <span class="en-only">Sign in</span>
+      <span class="fr-only">Se connecter</span>
+    </a>
+    <a href="/sign-out" class="btn bare sm lynxseal-auth-only">
+      <span class="en-only">Sign out</span>
+      <span class="fr-only">Déconnexion</span>
     </a>
     <button type="button" class="btn bare sm" id="langToggleBtn" title="Switch language">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -862,6 +884,19 @@
   //    fire-forward to the existing change handlers wired up by
   //    index-page.js.
   document.addEventListener('DOMContentLoaded', () => {
+
+    // 0) Tenant branding — when the wrapper SW is in front of the portal,
+    //    /__tenant-globals.js sets window.ORG_NAME. Use it as the wordmark
+    //    text and reveal the "Powered by LynxSeal" attribution. On the
+    //    bare portal origin window.ORG_NAME is undefined and nothing
+    //    changes (wordmark stays "LynxSeal", no attribution).
+    if (window.ORG_NAME && window.ORG_NAME !== 'LynxSeal') {
+      const nameEl = document.getElementById('tenantName');
+      if (nameEl) nameEl.textContent = window.ORG_NAME;
+      document.querySelectorAll('.powered-by, .powered-sep').forEach(el => el.hidden = false);
+      document.title = window.ORG_NAME + ' · Certify a translation';
+    }
+
     for (const drop of document.querySelectorAll('.drop')) {
       const input = drop.querySelector('input[type=file]');
       const fileCard = drop.querySelector('.drop-file');
