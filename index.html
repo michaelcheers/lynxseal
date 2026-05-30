@@ -889,82 +889,14 @@
   //    index-page.js.
   document.addEventListener('DOMContentLoaded', () => {
 
-    // 0) Tenant branding. The wrapper SW injects /__tenant-globals.js which
-    //    sets window.ORG_NAME; absence of that var = bare portal.
-    //    Wordmark links to the tenant's top-level domain — we derive it by
-    //    stripping the first subdomain label of location.hostname:
-    //      portal.lynxseal.com         → lynxseal.com
-    //      certify.stibc.org           → stibc.org
-    //      certify.atio.on.ca          → atio.on.ca
-    //      certify-stibc-test.lynxseal.com → lynxseal.com
-    const host = location.hostname;
-    const i = host.indexOf('.');
-    const homeUrl = i > 0 ? 'https://' + host.substring(i + 1) : null;
-    const wordmark = document.getElementById('tenantWordmark');
-    if (wordmark && homeUrl) wordmark.href = homeUrl;
+    // Tenant branding, language toggle, and .drop file handling are shared
+    // with verify-document.html and live in /js/ui-shell.js. Only the
+    // certify-specific step rail is wired up here.
 
-    if (window.ORG_NAME && window.ORG_NAME !== 'LynxSeal') {
-      const logoEl = document.getElementById('tenantLogo');
-      if (logoEl) { logoEl.src = '/logo.png'; logoEl.alt = window.ORG_NAME; }
-      document.querySelectorAll('.powered-by, .powered-sep').forEach(el => el.hidden = false);
-      document.title = window.ORG_NAME + ' · Certify a translation';
-    }
-
-    for (const drop of document.querySelectorAll('.drop')) {
-      const input = drop.querySelector('input[type=file]');
-      const fileCard = drop.querySelector('.drop-file');
-      ['dragenter', 'dragover'].forEach(ev =>
-        drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-      ['dragleave', 'drop'].forEach(ev =>
-        drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-      drop.addEventListener('drop', e => {
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
-          input.files = e.dataTransfer.files;
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      });
-      input.addEventListener('change', () => {
-        const f = input.files && input.files[0];
-        if (!f) { drop.classList.remove('filled'); fileCard.innerHTML = ''; return; }
-        drop.classList.add('filled');
-        const sizeKb = (f.size / 1024).toFixed(0);
-        fileCard.innerHTML = `
-          <span class="drop-icon">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M4 2h5l3 3v9H4V2z" stroke="currentColor" stroke-width="1.2"/>
-            </svg>
-          </span>
-          <span class="drop-meta">
-            <span class="drop-name"></span>
-            <span class="drop-sub"></span>
-          </span>
-          <button type="button" class="drop-clear" data-clear>Remove</button>`;
-        fileCard.querySelector('.drop-name').textContent = f.name;
-        fileCard.querySelector('.drop-sub').textContent = `${sizeKb} KB · ${(f.type || 'file')}`;
-        fileCard.querySelector('[data-clear]').addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          input.value = '';
-          drop.classList.remove('filled');
-          fileCard.innerHTML = '';
-        });
-      });
-    }
-
-    // 2) Topbar language toggle — flips between en/fr via the function
-    //    already exported by index-page.js (defined globally as switchLanguage).
-    const langBtn = document.getElementById('langToggleBtn');
-    if (langBtn) {
-      langBtn.addEventListener('click', () => {
-        const next = document.body.classList.contains('lang-fr') ? 'en' : 'fr';
-        if (typeof switchLanguage === 'function') switchLanguage(next);
-      });
-    }
-
-    // 3) Step rail — when the stamp modal opens or transitions, update the
-    //    "active" marker so the rail tracks where the user actually is in
-    //    the flow. We watch #modalDlg's style.display and inner state via
-    //    MutationObserver. Step 1 (active) by default.
+    // Step rail — when the stamp modal opens or transitions, update the
+    // "active" marker so the rail tracks where the user actually is in
+    // the flow. We watch #modalDlg's style.display and inner state via
+    // MutationObserver. Step 1 (active) by default.
     const modal = document.getElementById('modalDlg');
     const rail = document.getElementById('stepRail');
     if (modal && rail) {
@@ -998,6 +930,7 @@
   });
 </script>
 
+<script src="/js/ui-shell.js?v=1"></script>
 <script src="/js/index-page.js?v=1"></script>
 </body>
 </html>

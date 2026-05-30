@@ -7,7 +7,9 @@
   Strict CSP, hardcoded to the exact CDN URLs this page loads. No
   'unsafe-inline' / 'unsafe-eval' for scripts. 'wasm-unsafe-eval' is
   required by argon2-browser (decodes inlined WASM via WebAssembly).
-  'unsafe-inline' on style-src covers the page's inline style="…" attrs.
+  'unsafe-inline' on style-src covers the page's inline style="…" attrs and
+  the <style> block below. Google Fonts (googleapis + gstatic) added for the
+  paper aesthetic. /js/ui-shell.js is covered by 'self'.
   TODO: when QR-supporting tenants (ATIO, ATIM) come online, add the S3
   presigned-URL host to connect-src so checkQRCode's fetch() works.
 -->
@@ -17,19 +19,21 @@
     https://cdn.jsdelivr.net/npm/node-forge@1.4.0/dist/forge.min.js
     https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js;
   style-src 'self' 'unsafe-inline'
-    https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css;
+    https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css
+    https://fonts.googleapis.com;
   connect-src 'self'
     https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js;
   img-src 'self' data:;
-  font-src 'self' data:;
+  font-src 'self' data: https://fonts.gstatic.com;
   base-uri 'none';
   form-action 'self';
   object-src 'none';
   frame-src https://portal.lynxseal.com/api-proxy.html;
 ">
 <title>Check a digital stamp</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha256-YLGeXaapI0/5IgZopewRJcFXomhRMlYYjugPLSyNjTY=" crossorigin="anonymous" referrerpolicy="no-referrer">
-<link rel="stylesheet" href="/css/site.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/lynxseal.css">
 <script src="/js/config.js"></script>
 <script src="/js/portal-bridge.js"></script>
@@ -47,60 +51,246 @@
      parsing, PKCS#7 (CMS), X.509 cert handling, and SHA-256. Replaces
      the pkijs ESM+bare-imports rabbit hole. -->
 <script src="https://cdn.jsdelivr.net/npm/node-forge@1.4.0/dist/forge.min.js" integrity="sha256-2bkHTmhhIA1nbiXc/peInbXo9BULt2bSnEka1wmlG1g=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<style>
+  /* Paper aesthetic — shared subset of the tokens used on index.html. */
+  :root {
+    --paper: #F4F0E6;
+    --paper-2: #EDE7D7;
+    --card: #FBF8F0;
+    --card-edge: #E5DFC9;
+    --ink: #15140F;
+    --ink-2: #2C2A22;
+    --dim: #76715F;
+    --dim-2: #98927D;
+    --line: #D7D0BB;
+    --accent: #B83A2B;
+    --accent-ink: #7A2117;
+    --accent-soft: #F1D9D3;
+    --positive: #2F6B3E;
+    --shadow-1: 0 1px 0 rgba(21,20,15,0.04), 0 1px 2px rgba(21,20,15,0.06);
+    --shadow-2: 0 8px 24px -10px rgba(21,20,15,0.22), 0 1px 0 rgba(21,20,15,0.06);
+    --radius: 6px;
+    --radius-lg: 10px;
+    --sans: "Geist", "Söhne", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --serif: "Newsreader", "GT Sectra", "Source Serif 4", Georgia, serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01" on, "cv11" on;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea, select, button { font-family: inherit; color: inherit; }
+  ::selection { background: var(--accent); color: #fff; }
+
+  body::before {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none;
+    background-image: radial-gradient(rgba(21,20,15,0.025) 1px, transparent 1px);
+    background-size: 3px 3px; opacity: .6; z-index: 0; mix-blend-mode: multiply;
+  }
+
+  body:not(.lang-fr) .fr-only { display: none; }
+  body.lang-fr .en-only { display: none; }
+
+  .display-md { font-family: var(--serif); font-weight: 400; font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; }
+  .eyebrow { font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  .label { display: block; font-size: 12px; font-weight: 500; letter-spacing: 0.01em; color: var(--ink-2); margin-bottom: 6px; }
+  .meta { color: var(--dim); font-size: 12px; }
+  .mono { font-family: var(--mono); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  .ctrl { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; font-size: 14px; color: var(--ink); transition: border-color .12s, box-shadow .12s; font-family: inherit; }
+  .ctrl:hover { border-color: var(--dim-2); }
+  .ctrl:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(21,20,15,0.08); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; border: 1px solid transparent; background: transparent; color: var(--ink); transition: background .12s, border-color .12s, color .12s, transform .04s; white-space: nowrap; text-decoration: none; }
+  .btn:active { transform: translateY(0.5px); }
+  .btn.accent { background: var(--accent); color: #FFF8F4; }
+  .btn.accent:hover { background: var(--accent-ink); }
+  .btn.ghost { background: var(--card); border-color: var(--line); }
+  .btn.ghost:hover { border-color: var(--dim-2); background: #FFFCF3; }
+  .btn.bare { color: var(--dim); }
+  .btn.bare:hover { color: var(--ink); background: var(--card); }
+  .btn.sm { height: 30px; font-size: 12px; padding: 0 10px; border-radius: 5px; }
+  .btn.lg { height: 44px; font-size: 14px; padding: 0 18px; }
+  .btn.block { width: 100%; }
+
+  .card { background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); }
+  .vr { display: inline-block; width: 1px; height: 20px; background: var(--line); margin: 0 4px; vertical-align: middle; }
+
+  hr.dotted { background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 6px 1px; background-repeat: repeat-x; background-position: 0 center; height: 1px; border: 0; margin: 0; }
+  .or-divider { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; margin: 4px 0; }
+  .or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  /* Drop zone (verify has a single PDF input) */
+  .drop { position: relative; display: block; border: 1px dashed var(--line); border-radius: var(--radius); padding: 22px; text-align: center; color: var(--dim); background: linear-gradient(180deg, var(--card) 0%, #FAF6EA 100%); transition: all .15s; cursor: pointer; }
+  .drop:hover { border-color: var(--ink-2); color: var(--ink-2); }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+  .drop.filled { border-style: solid; border-color: var(--line); background: var(--card); color: var(--ink); text-align: left; padding: 14px; }
+  .drop-file { display: none; }
+  .drop.filled .drop-prompt { display: none; }
+  .drop.filled .drop-file { display: flex; align-items: center; gap: 10px; }
+  .drop-file .drop-icon { width: 28px; height: 28px; flex: 0 0 28px; display: flex; align-items: center; justify-content: center; background: var(--paper-2); border-radius: 4px; color: var(--dim); }
+  .drop-file .drop-meta { flex: 1; min-width: 0; }
+  .drop-file .drop-name { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .drop-file .drop-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .drop-file .drop-clear { font-size: 11px; color: var(--dim); padding: 4px 8px; border-radius: 4px; border: 0; background: transparent; cursor: pointer; }
+  .drop-file .drop-clear:hover { background: var(--accent-soft); color: var(--accent-ink); }
+  .drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .drop.filled input[type=file] { pointer-events: none; opacity: 0; width: 0; height: 0; }
+
+  /* Topbar (same shape as index.html) */
+  #mainContent { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+  .topbar { height: 56px; flex-shrink: 0; border-bottom: 1px solid var(--line); background: var(--paper); display: flex; align-items: center; padding: 0 20px; gap: 14px; }
+  .topbar .wordmark { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 22px; letter-spacing: -0.01em; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+  .topbar .wordmark img { max-height: 32px; max-width: 140px; object-fit: contain; display: block; }
+  .topbar .breadcrumb { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .topbar .powered-by { font-size: 11.5px; color: var(--dim); letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+  .topbar .powered-by:hover { color: var(--ink-2); }
+  .topbar .powered-by .powered-logo { height: 18px; width: 18px; display: block; }
+  .topbar-spacer { flex: 1; }
+  body.lynxseal-auth .lynxseal-anon-only { display: none; }
+  body.lynxseal-anon .lynxseal-auth-only { display: none; }
+
+  /* Centered verify card */
+  .verify-stage { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 48px 24px; }
+  .verify-card { width: 100%; max-width: 520px; padding: 32px; }
+  .verify-card h1 { margin: 0 0 6px; }
+  .verify-card .sub { color: var(--dim); font-size: 13px; margin: 0 0 24px; }
+  .field { margin-bottom: 18px; }
+
+  /* Result block */
+  #signingInfo { font-weight: 600; text-align: center; margin-top: 20px; white-space: pre-line; }
+  #signingInfoDetails { font-family: var(--serif); font-size: 1.05rem; line-height: 1.6; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(21,20,15,0.15); border-radius: 6px; border: 2px solid var(--paper); }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(21,20,15,0.28); }
+</style>
 </head>
-<body>
+<body class="lang-en">
+
 <main id="mainContent" style="display:none">
 
-<form style="display:none" id="hashForm">
-  <input type="hidden" id="hashValue" name="hash">
-</form>
+  <header class="topbar">
+    <a class="wordmark" id="tenantWordmark" href="/" aria-label="Home">
+      <img id="tenantLogo" src="/logo.svg" alt="LynxSeal">
+    </a>
+    <span class="vr"></span>
+    <span class="breadcrumb">
+      <span class="en-only">Verify a document</span>
+      <span class="fr-only">Vérifier un document</span>
+    </span>
+    <span class="vr powered-sep" hidden></span>
+    <a class="powered-by" href="https://lynxseal.com" target="_blank" rel="noopener" hidden>
+      <span class="en-only">Powered by</span>
+      <span class="fr-only">Propulsé par</span>
+      <img src="/logo.svg" alt="LynxSeal" class="powered-logo">
+    </a>
+    <div class="topbar-spacer"></div>
+    <a href="/" class="btn bare sm lynxseal-auth-only">
+      <span class="en-only">Certify</span>
+      <span class="fr-only">Certifier</span>
+    </a>
+    <a href="/how-it-works" class="btn bare sm">
+      <span class="en-only">FAQ</span>
+      <span class="fr-only">FAQ</span>
+    </a>
+    <a href="/sign-in" class="btn bare sm lynxseal-anon-only">
+      <span class="en-only">Sign in</span>
+      <span class="fr-only">Se connecter</span>
+    </a>
+    <a href="/sign-out" class="btn bare sm lynxseal-auth-only">
+      <span class="en-only">Sign out</span>
+      <span class="fr-only">Déconnexion</span>
+    </a>
+    <button type="button" class="btn bare sm" id="langToggleBtn" title="Switch language">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M1.5 8h13M8 1.5C9.8 3.5 10.8 5.7 10.8 8s-1 4.5-2.8 6.5C6.2 12.5 5.2 10.3 5.2 8s1-4.5 2.8-6.5z" stroke="currentColor" stroke-width="1.2"/>
+      </svg>
+      <span class="en-only">EN</span>
+      <span class="fr-only">FR</span>
+    </button>
+  </header>
 
-<div class="container" style="margin-top:2em">
-  <div class="row justify-content-center" style="height:80vh">
-    <div class="col-sm-6">
-      <div class="card h-100">
-        <div class="card-body">
-          <h6 style="text-align:center">
-            <span class="en-only">Verify the validity of a <span id="assocName1"></span> digitally stamped document</span>
-            <span class="fr-only">Vérifiez la validité d'un document tamponné numériquement par <span id="assocName2"></span></span>
-          </h6><br>
+  <!-- Hidden hash field used by verify-document.js as the server-lookup key. -->
+  <form style="display:none" id="hashForm">
+    <input type="hidden" id="hashValue" name="hash">
+  </form>
 
-          <form id="verifyForm">
-            <div class="form-group">
-              <label for="translationPackage">
-                <span class="en-only">Translation Document (PDF)</span>
-                <span class="fr-only">Document de traduction (PDF)</span>
-              </label>
-              <input class="form-control" id="translationPackage" type="file" accept=".pdf">
-            </div>
-            <div class="form-group" id="certNumberGroup" style="display:none">
-              <label for="certNumber">
-                <span class="en-only">OR Verification Code (case sensitive)</span>
-                <span class="fr-only">OU Code de vérification (sensible à la casse)</span>
-              </label>
-              <input class="form-control" id="certNumber" name="certNumber" type="text" minlength="18" maxlength="18">
-            </div>
-            <button class="btn btn-primary">
-              <span class="en-only">Check Digital Stamp</span>
-              <span class="fr-only">Vérifier le tampon numérique</span>
-            </button>
-          </form>
+  <div class="verify-stage">
+    <div class="card verify-card">
+      <div class="eyebrow" style="margin-bottom:8px">
+        <span class="en-only">Verification</span>
+        <span class="fr-only">Vérification</span>
+      </div>
+      <h1 class="display-md">
+        <span class="en-only">Check a digital stamp</span>
+        <span class="fr-only">Vérifier un tampon numérique</span>
+      </h1>
+      <p class="sub">
+        <span class="en-only">Confirm a document was digitally stamped by <span id="assocName1"></span> and hasn't been altered since.</span>
+        <span class="fr-only">Confirmez qu'un document a été tamponné numériquement par <span id="assocName2"></span> et n'a pas été modifié depuis.</span>
+      </p>
 
-          <br><br>
-          <div id="signingInfo" style="font-weight:bold;text-align:center"></div>
-          <div id="signingInfoDiv">
-            <div>
-              <div id="signingInfoDetails" style="font-family:Times;font-size:1.5rem"></div>
+      <form id="verifyForm">
+        <div class="field">
+          <label class="label" for="translationPackage">
+            <span class="en-only">Translation document (PDF)</span>
+            <span class="fr-only">Document de traduction (PDF)</span>
+          </label>
+          <label class="drop">
+            <div class="drop-prompt">
+              <span class="en-only">Drop the stamped PDF or click to browse</span>
+              <span class="fr-only">Déposez le PDF tamponné ou cliquez pour parcourir</span>
             </div>
+            <div class="drop-file"></div>
+            <input id="translationPackage" type="file" accept=".pdf">
+          </label>
+        </div>
+
+        <div class="field" id="certNumberGroup" style="display:none">
+          <div class="or-divider">
+            <span class="en-only">or</span><span class="fr-only">ou</span>
           </div>
+          <label class="label" for="certNumber">
+            <span class="en-only">Verification code (case sensitive)</span>
+            <span class="fr-only">Code de vérification (sensible à la casse)</span>
+          </label>
+          <input class="ctrl mono" id="certNumber" name="certNumber" type="text" minlength="18" maxlength="18" autocomplete="off" spellcheck="false">
+        </div>
+
+        <button class="btn accent lg block" type="submit">
+          <span class="en-only">Check digital stamp</span>
+          <span class="fr-only">Vérifier le tampon numérique</span>
+        </button>
+      </form>
+
+      <div id="signingInfo"></div>
+      <div id="signingInfoDiv">
+        <div>
+          <div id="signingInfoDetails"></div>
         </div>
       </div>
     </div>
   </div>
-</div>
 
 </main>
 
+<script src="/js/ui-shell.js?v=1"></script>
 <script src="/js/verify-document.js" defer></script>
 </body>
 </html>
