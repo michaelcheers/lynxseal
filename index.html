@@ -461,6 +461,14 @@
 
   #profileEditDlg textarea.form-control { min-height: 96px; line-height: 1.55; resize: vertical; }
 
+  /* Cancel (left) / Save (right) action row. Explicit + ID-scoped so it
+     can't be flattened by the form's column-flex context the way a bare
+     .row-h + spacer-div was. */
+  #profileEditDlg .profile-actions {
+    display: flex; flex-direction: row; align-items: center;
+    justify-content: space-between; gap: 12px; margin-top: 4px;
+  }
+
   /* Live-preview pane sits on a dark stage like the main editor preview */
   #profileEditDlg .preview-col { background: linear-gradient(180deg, #2C2924 0%, #1E1C18 100%); border-radius: var(--radius-lg); padding: 18px; }
   #profileEditDlg .preview-col .eyebrow { color: rgba(255,255,255,0.55); margin-bottom: 12px; }
@@ -864,11 +872,10 @@
             <textarea class="form-control" name="CredentialInfo" maxlength="1024" rows="6" id="credentialInfoTextarea"></textarea>
           </div>
 
-          <div class="row-h" style="margin-top:16px">
+          <div class="profile-actions">
             <button class="btn ghost" type="button" id="cancelProfileBtn">
               <span class="en-only">Cancel</span><span class="fr-only">Annuler</span>
             </button>
-            <div style="flex:1"></div>
             <button class="btn accent" type="submit">
               <span class="en-only">Save</span><span class="fr-only">Enregistrer</span>
             </button>
