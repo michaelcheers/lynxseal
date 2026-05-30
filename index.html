@@ -421,13 +421,58 @@
   }
   .popup-footer .spacer { flex: 1; }
 
-  /* Profile-edit dialog uses a 2-column body */
-  #profileEditDlg .popup-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
-  #profileEditDlg .popup-body .col { display: flex; flex-direction: column; gap: 14px; overflow: auto; }
-  #profileEditDlg .popup-body .col iframe { flex: 1; }
-  #profileEditDlg .radio-list { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
-  #profileEditDlg .radio-list label { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
-  #profileEditDlg .radio-list input[type=file] { margin-left: 22px; margin-top: 4px; font-size: 12px; }
+  /* Profile-edit dialog — 2-column body: scrolling form left, live preview right */
+  #profileEditDlg .popup-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; padding: 20px 28px; }
+  #profileEditDlg .popup-body .col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  #profileEditDlg .popup-body .col.form-col { overflow: auto; padding-right: 6px; }
+  #profileEditDlg #profileEditForm { display: flex; flex-direction: column; gap: 20px; }
+  #profileEditDlg .form-group { margin: 0; }
+  #profileEditDlg .form-group > b { display: block; font-size: 12px; font-weight: 500; color: var(--ink-2); margin-bottom: 6px; letter-spacing: 0.01em; }
+
+  /* Radio groups as selectable rows */
+  #profileEditDlg .radio-list { display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+  #profileEditDlg .radio-list label,
+  #profileEditDlg .radio-list > div > label {
+    display: flex; align-items: center; gap: 10px; margin: 0;
+    font-size: 13px; color: var(--ink-2);
+    padding: 8px 10px; border-radius: 5px; cursor: pointer;
+    transition: background .12s, color .12s;
+  }
+  #profileEditDlg .radio-list label:hover { background: var(--paper-2); }
+  #profileEditDlg .radio-list input[type=radio] { accent-color: var(--accent); margin: 0; flex-shrink: 0; }
+  #profileEditDlg .radio-list label:has(input[type=radio]:checked) { background: var(--accent-soft); color: var(--accent-ink); }
+  #profileEditDlg .radio-list input[type=file] { margin: 2px 6px 6px 32px; font-size: 12px; color: var(--dim); max-width: calc(100% - 40px); }
+
+  /* Native file picker button restyled to match .btn.ghost */
+  #profileEditDlg input[type=file]::file-selector-button {
+    font-family: inherit; font-size: 12px; font-weight: 500;
+    padding: 6px 10px; margin-right: 10px;
+    border: 1px solid var(--line); border-radius: 5px;
+    background: var(--card); color: var(--ink); cursor: pointer;
+    transition: border-color .12s, background .12s;
+  }
+  #profileEditDlg input[type=file]::file-selector-button:hover { border-color: var(--dim-2); background: #FFFCF3; }
+
+  /* Show the custom-upload file input only when its "Custom" radio is
+     selected. (The radios are wrapped in <label>, so the old adjacent-
+     sibling selectors no longer applied — :has on the group is the fix.) */
+  #profileEditDlg .radio-list:not(:has(input[name=LogoType][value=Custom]:checked)) input[name=Logo] { display: none; }
+  #profileEditDlg .radio-list:not(:has(input[name=SignatureType][value=Custom]:checked)) input[name=Signature] { display: none; }
+
+  #profileEditDlg textarea.form-control { min-height: 96px; line-height: 1.55; resize: vertical; }
+
+  /* Live-preview pane sits on a dark stage like the main editor preview */
+  #profileEditDlg .preview-col { background: linear-gradient(180deg, #2C2924 0%, #1E1C18 100%); border-radius: var(--radius-lg); padding: 18px; }
+  #profileEditDlg .preview-col .eyebrow { color: rgba(255,255,255,0.55); margin-bottom: 12px; }
+  #profileEditDlg .popup-body .col iframe {
+    flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 2px;
+    background: #FDFAF1;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 12px 32px -8px rgba(0,0,0,0.55);
+  }
+  @media (max-width: 860px) {
+    #profileEditDlg .popup-body { grid-template-columns: 1fr; }
+    #profileEditDlg .preview-col { display: none; }
+  }
 
   /* Scrollbars */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -752,7 +797,7 @@
       </h1>
     </div>
     <div class="popup-body">
-      <div class="col">
+      <div class="col form-col">
         <form id="profileEditForm">
           <input type="hidden" id="editingId" name="Id" value="">
 
@@ -786,10 +831,6 @@
               </label>
               <input type="file" class="form-control" name="Logo" accept=".png,.jpg,.jpeg,.webp,.bmp">
             </div>
-            <style>
-              input[name=LogoType][value=Custom]:not(:checked) + label + input[name=Logo],
-              input[name=LogoType][value=Custom]:not(:checked) ~ input[name=Logo] { display:none; }
-            </style>
           </div>
 
           <div class="form-group" id="signatureSection" style="display:none">
@@ -811,11 +852,6 @@
               </label>
               <input type="file" class="form-control" name="Signature" accept=".png,.jpg,.jpeg,.webp,.bmp">
             </div>
-            <style>
-              input[name=SignatureType][value=Custom]:not(:checked) + label + input[name=Signature],
-              input[name=SignatureType][value=Custom]:not(:checked) ~ input[name=Signature] { display:none; }
-              input[name=SignatureType][value=existing]:not(:checked) ~ #existingSignatureSelector { display:none; }
-            </style>
           </div>
 
           <div class="form-group">
@@ -839,7 +875,8 @@
           </div>
         </form>
       </div>
-      <div class="col">
+      <div class="col preview-col">
+        <div class="eyebrow"><span class="en-only">Live preview</span><span class="fr-only">Aperçu en direct</span></div>
         <iframe id="customizationPreview"></iframe>
       </div>
     </div>
