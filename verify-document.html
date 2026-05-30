@@ -171,9 +171,30 @@
   .verify-card .sub { color: var(--dim); font-size: 13px; margin: 0 0 24px; }
   .field { margin-bottom: 18px; }
 
-  /* Result block */
+  /* Result block. Failure path sets inline color:red + plain text (pre-line
+     keeps its \n line break). Success path adds .verified and builds a
+     structured banner. */
   #signingInfo { font-weight: 600; text-align: center; margin-top: 20px; white-space: pre-line; line-height: 1.5; }
-  .view-doc-link { font-weight: 500; color: var(--accent); text-decoration: none; }
+  #signingInfo.verified {
+    white-space: normal;
+    background: #EBF3EC;
+    border: 1px solid #C5E0C9;
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    font-weight: 400;
+  }
+  #signingInfo .verify-headline {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: var(--serif); font-size: 18px; font-weight: 500; color: var(--positive);
+  }
+  #signingInfo .verify-check {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; flex-shrink: 0;
+    border-radius: 50%; background: var(--positive); color: #fff;
+    font-size: 13px; font-weight: 700; line-height: 1;
+  }
+  #signingInfo .verify-subline { margin-top: 6px; font-size: 13px; color: var(--dim); }
+  #signingInfo .view-doc-link, .view-doc-link { display: block; margin-top: 10px; font-weight: 500; color: var(--accent); text-decoration: none; }
   .view-doc-link:hover { text-decoration: underline; }
   #signingInfoDiv { margin-top: 16px; }
   #signingInfoDetails:not(:empty) {

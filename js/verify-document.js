@@ -289,24 +289,31 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     // the server-side hash check.
     hashValue.value = docDigestHex;
     const makeStibcDialog = () => {
-        signingInfo.style.color = 'green';
-        signingInfo.innerText = document.body.classList.contains('lang-fr')
-          ? '✅ Ce tampon numérique a été vérifié !'
-          : '✅ This digital stamp was verified!';
-        signingInfo.appendChild(document.createElement('br'));
-        const tmpl = 'Society of Translators ';
         const isFr = document.body.classList.contains('lang-fr');
-        const start = isFr ? "(Certifiée par l'" : '(Certified by the ';
-        const end = ')';
-        if (associationName.startsWith(tmpl)) {
-          signingInfo.appendChild(new Text(`${start}${isFr ? 'Société des traducteurs' : 'Society of Translators'}`));
-          signingInfo.appendChild(document.createElement('br'));
-          signingInfo.appendChild(new Text(`${associationName.substr(tmpl.length)}${end}`));
-        } else {
-          if (isFr && associationName === 'Association of Translators and Interpreters of Ontario')
-            associationName = "Association des traducteurs et interprètes de l'Ontario";
-          signingInfo.appendChild(new Text(`${start}${associationName}${end}`));
-        }
+        if (isFr && associationName === 'Association of Translators and Interpreters of Ontario')
+          associationName = "Association des traducteurs et interprètes de l'Ontario";
+        // Clean verified banner: checkmark + bold headline, then a muted
+        // "Certified by <association>" subline on its own. The old layout
+        // forced a <br> mid-name and wrapped the org in parentheses, which
+        // split the name across lines and read as broken.
+        signingInfo.style.color = '';
+        signingInfo.classList.add('verified');
+        signingInfo.replaceChildren();
+
+        const headline = document.createElement('div');
+        headline.className = 'verify-headline';
+        const check = document.createElement('span');
+        check.className = 'verify-check';
+        check.textContent = '✓';
+        const headlineText = document.createElement('span');
+        headlineText.textContent = isFr ? 'Ce tampon numérique a été vérifié' : 'This digital stamp was verified';
+        headline.append(check, headlineText);
+
+        const subline = document.createElement('div');
+        subline.className = 'verify-subline';
+        subline.textContent = (isFr ? 'Certifié par ' : 'Certified by the ') + associationName;
+
+        signingInfo.append(headline, subline);
       };
       if (trustedIndex === 0) {
         let signatureDetails;
@@ -320,7 +327,8 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
         makeStibcDialog();
         const fr = document.body.classList.contains('lang-fr');
         if (viewable) {
-          signingInfo.appendChild(document.createElement('br'));
+          // .view-doc-link is display:block-ish with its own margin-top, so no
+          // <br> needed — it sits cleanly below the verified banner.
           signingInfo.appendChild(Object.assign(document.createElement('a'), {
             innerText: fr ? 'Voir le document' : 'View Document',
             href: 'javascript:void(0)',
@@ -369,6 +377,7 @@ function reportVerifyFailure(e) {
   console.error(e);
   if (hashValue.value === '') api.post('/api/verify-document', { hash: '' }).catch(() => {});
   hashValue.value = '';
+  signingInfo.classList.remove('verified');
   signingInfo.style.color = 'red';
   signingInfo.innerText = getErrorOrNull(e) ?? (document.body.classList.contains('lang-fr')
     ? "❌ Le tampon numérique n'a pas pu être vérifié.\nNous vous invitons à contacter le traducteur."
