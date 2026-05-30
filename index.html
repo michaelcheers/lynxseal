@@ -11,9 +11,13 @@
      everything with the inline styles. Bootstrap is intentionally NOT
      loaded — the legacy Bootstrap-shaped controls were replaced with
      mockup-style .ctrl / .drop / .btn equivalents. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Fonts are served by the wrapper service worker at /__fonts.css, which
+     proxies the woff2 files from jsdelivr with a pinned SRI hash (see the
+     wrapper sw.js). The page never touches a font CDN directly, so a tampered
+     font (which could remap glyphs to misrender a verification code/URL) can't
+     be served. On the bare portal origin (no SW) this 404s and the CSS system-
+     font fallbacks apply. -->
+<link rel="stylesheet" href="/__fonts.css">
 <link rel="stylesheet" href="/css/lynxseal.css">
 
 <script src="/js/site.js"></script>
@@ -26,7 +30,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js" integrity="sha256-2N9WG5+6mOJPLlEw5AlIgJKBu7xVogxBI1nxoKXrNaY=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" integrity="sha256-eeyG+ChWAFsciHkFz8z8++w4Icphx/1alS+qX3ePeRw=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<script src="/js/render-declaration.js?v=1.02"></script>
+<script src="/js/render-declaration.js?v=1.03"></script>
 <script src="/js/pdf-signing.js?v=1"></script>
 <script src="/js/argon2-init.js?v=1"></script>
 
