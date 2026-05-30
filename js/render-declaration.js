@@ -222,6 +222,28 @@
     }
   }
 
+  // Split `text` into display lines: break on explicit '\n', then greedily
+  // word-wrap each paragraph to `maxWidth`. Used for the contact-info and
+  // credential-info blocks, which the server (QuestPDF) auto-wrapped but the
+  // original port drew line-per-'\n' (so long lines ran off the page).
+  function wrapTextLines(text, maxWidth, size, chain) {
+    const out = [];
+    for (const para of String(text).split('\n')) {
+      if (!para) { out.push(''); continue; }
+      const words = para.split(' ');
+      let line = '';
+      for (const w of words) {
+        const test = line ? line + ' ' + w : w;
+        if (line && measureRuns(test, size, chain) > maxWidth) {
+          out.push(line);
+          line = w;
+        } else line = test;
+      }
+      if (line) out.push(line);
+    }
+    return out;
+  }
+
   function drawCentered(ctx, text, size, chain, opts = {}) {
     const lh = lineHFor(size);
     _ensureSpace(ctx, lh);
@@ -561,7 +583,11 @@
       // text height so _ensureSpace can reserve max(logoH, contactH) — otherwise
       // a small logo with many contact lines could push the contact text past
       // the bottom margin on a short first page.
-      const contactLines = inputs.contactInfo ? inputs.contactInfo.split('\n') : [];
+      // Contact column width mirrors the QuestPDF RelativeItem split: logo:contact
+      // is 0.5:1.0 for ATIO and 0.5:0.5 for STIBC. Wrap to that width so long
+      // address/contact lines don't run off the right edge.
+      const contactColW = isAtio ? contentW * (1 / 1.5) : contentW * 0.5;
+      const contactLines = inputs.contactInfo ? wrapTextLines(inputs.contactInfo, contactColW, baseSize, bodyChain) : [];
       const lh = lineHFor(baseSize);
       const contactH = contactLines.length * lh;
       const rowH = Math.max(logoH, contactH);
@@ -578,7 +604,7 @@
       }
       ctx.y = rowYTop - rowH - sectionGap;
     } else if (inputs.contactInfo) {
-      for (const line of inputs.contactInfo.split('\n')) {
+      for (const line of wrapTextLines(inputs.contactInfo, contentW, baseSize, bodyChain)) {
         drawRight(ctx, line, pageW - marginX, baseSize, bodyChain);
       }
       ctx.y -= sectionGap;
@@ -666,7 +692,7 @@
     // QuestPDF Column with x.Spacing — GenerateDeclaration.cs:435-438).
     if (inputs.credentialInfo) {
       ctx.y -= sectionGap;
-      for (const line of inputs.credentialInfo.split('\n')) {
+      for (const line of wrapTextLines(inputs.credentialInfo, contentW, baseSize, bodyChain)) {
         drawCentered(ctx, line, baseSize, bodyChain);
       }
     }
