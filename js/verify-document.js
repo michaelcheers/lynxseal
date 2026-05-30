@@ -302,9 +302,12 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
 
         const headline = document.createElement('div');
         headline.className = 'verify-headline';
-        const check = document.createElement('span');
-        check.className = 'verify-check';
-        check.textContent = '✓';
+        const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        check.setAttribute('class', 'verify-check');
+        check.setAttribute('viewBox', '0 0 24 24');
+        check.setAttribute('aria-hidden', 'true');
+        check.innerHTML = '<circle cx="12" cy="12" r="11" fill="currentColor"/>' +
+          '<path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>';
         const headlineText = document.createElement('span');
         headlineText.textContent = isFr ? 'Ce tampon numérique a été vérifié' : 'This digital stamp was verified';
         headline.append(check, headlineText);
