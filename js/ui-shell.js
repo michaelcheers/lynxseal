@@ -67,7 +67,12 @@
         const f = input.files && input.files[0];
         if (!f) { drop.classList.remove('filled'); fileCard.replaceChildren(); return; }
         drop.classList.add('filled');
-        const sizeKb = (f.size / 1024).toFixed(0);
+        // Human-readable size and a clean type label (file extension, not the
+        // raw "application/pdf" mime which reads as unprofessional).
+        const size = f.size >= 1024 * 1024
+          ? (f.size / 1024 / 1024).toFixed(1) + ' MB'
+          : Math.max(1, Math.round(f.size / 1024)) + ' KB';
+        const ext = (f.name.includes('.') ? f.name.split('.').pop() : '').toUpperCase();
         // Build with DOM APIs (no innerHTML) so the strict-CSP verify page is
         // happy and filenames can't inject markup.
         fileCard.replaceChildren();
@@ -81,7 +86,7 @@
         name.textContent = f.name;
         const sub = document.createElement('span');
         sub.className = 'drop-sub';
-        sub.textContent = `${sizeKb} KB · ${f.type || 'file'}`;
+        sub.textContent = ext ? `${ext} · ${size}` : size;
         meta.append(name, sub);
         const clear = document.createElement('button');
         clear.type = 'button';

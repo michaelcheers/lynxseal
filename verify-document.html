@@ -172,8 +172,29 @@
   .field { margin-bottom: 18px; }
 
   /* Result block */
-  #signingInfo { font-weight: 600; text-align: center; margin-top: 20px; white-space: pre-line; }
-  #signingInfoDetails { font-family: var(--serif); font-size: 1.05rem; line-height: 1.6; }
+  #signingInfo { font-weight: 600; text-align: center; margin-top: 20px; white-space: pre-line; line-height: 1.5; }
+  .view-doc-link { font-weight: 500; color: var(--accent); text-decoration: none; }
+  .view-doc-link:hover { text-decoration: underline; }
+  #signingInfoDiv { margin-top: 16px; }
+  #signingInfoDetails:not(:empty) {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 4px 16px 14px;
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+  .meta-section {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim);
+    padding: 16px 0 8px; margin-bottom: 2px; border-bottom: 1px solid var(--line);
+  }
+  .meta-row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; align-items: baseline; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft, #E6DFC9); }
+  .meta-key { color: var(--dim); font-size: 12px; flex-shrink: 0; }
+  .meta-val { color: var(--ink); text-align: right; font-weight: 500; word-break: break-word; }
+  .meta-val a { color: var(--accent); text-decoration: none; }
+  .meta-val a:hover { text-decoration: underline; }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: rgba(21,20,15,0.15); border-radius: 6px; border: 2px solid var(--paper); }

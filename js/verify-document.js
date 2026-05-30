@@ -48,26 +48,9 @@ let ASSOCIATION = null;
     document.getElementById('assocName1').textContent = ctx.association.name;
     document.getElementById('assocName2').textContent = ctx.association.name;
     if (SUPPORTS_QR) document.getElementById('certNumberGroup').style.display = '';
-    // Style for ATIO vs non-ATIO signing-info-div presentation
-    if (ctx.association.name !== 'ATIO') {
-      const div = document.getElementById('signingInfoDiv');
-      div.onclick = () => { div.style.display = 'none'; };
-      Object.assign(div.style, {
-        display: 'none', position: 'fixed', top: 0, left: 0, width: '100%',
-        overflow: 'hidden', zIndex: 99999, height: '100%', backgroundColor: 'rgba(0,0,0,0.5)',
-      });
-      const closer = document.createElement('button');
-      closer.innerHTML = '&times;';
-      closer.onclick = (e) => { e.stopPropagation(); div.style.display = 'none'; };
-      Object.assign(closer.style, { outline: 'none', border: 'none', backgroundColor: 'transparent', float: 'right', zIndex: 999999, position: 'fixed', top: 0, right: 0 });
-      const inner = div.firstElementChild;
-      Object.assign(inner.style, { backgroundColor: 'white', position: 'fixed', top: 0, left: 'calc((100% - min(106.518vh, 100%)) / 2)', width: 'min(106.518vh, 100%)', height: '100%', paddingLeft: '50px' });
-      inner.onclick = (e) => e.stopPropagation();
-      div.prepend(closer);
-      const h1 = document.createElement('h1');
-      h1.innerHTML = '<span class="en-only">Stamp Information</span><span class="fr-only">Informations sur le tampon</span>';
-      inner.prepend(h1);
-    }
+    // Stamp metadata renders inline for every tenant (the old non-ATIO
+    // fullscreen-overlay + "View Details" modal is gone). The details card
+    // is styled by verify-document.html's .meta-* rules.
     document.getElementById('mainContent').style.display = '';
     // Bootstrap trusted certificates + start auto-verify if URL has #key
     initVerification(ctx.rootCertificateBase64, ctx.oldRootCertificateBase64);
@@ -335,20 +318,13 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
         const { TimeSigned: { Raw, Title }, Signer: { FullName, Email, MemberNumber, Association: Assoc }, DocumentDescription, LanguagePair } = signatureDetails;
         associationName = Assoc.LongName;
         makeStibcDialog();
-        signingInfo.appendChild(document.createElement('br'));
-        signingInfo.appendChild(document.createElement('br'));
-        if (!SUPPORTS_QR) {
-          signingInfo.appendChild(Object.assign(document.createElement('a'), {
-            innerText: document.body.classList.contains('lang-fr') ? 'Voir les détails' : 'View Details',
-            href: 'javascript:void(0)',
-            onclick: () => signingInfoDiv.style.display = '',
-          }));
-        }
+        const fr = document.body.classList.contains('lang-fr');
         if (viewable) {
           signingInfo.appendChild(document.createElement('br'));
           signingInfo.appendChild(Object.assign(document.createElement('a'), {
-            innerText: document.body.classList.contains('lang-fr') ? 'Voir le document' : 'View Document',
+            innerText: fr ? 'Voir le document' : 'View Document',
             href: 'javascript:void(0)',
+            className: 'view-doc-link',
             onclick: () => {
               const blob = new Blob([buffer], { type: 'application/pdf' });
               const url = URL.createObjectURL(blob);
@@ -356,26 +332,35 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
             },
           }));
         }
+        // Render stamp metadata inline as a clean key/value card. Styled by
+        // the .meta-* rules in verify-document.html.
         const div = signingInfoDetails;
-        div.parentElement.style.fontSize = '1rem';
-        if (!SUPPORTS_QR) div.parentElement.style.overflow = 'scroll';
-        const fr = document.body.classList.contains('lang-fr');
-        div.appendChild(Object.assign(document.createElement('u'), { innerText: fr ? 'Informations sur le document' : 'Document Info' }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? `Nom: ${DocumentDescription}` : `Name: ${DocumentDescription}`)); div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? `Paire de langues: ${LanguagePair}` : `Language Pair: ${LanguagePair}`)); div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? 'Date de tamponnage: ' : 'Date Stamped: '));
-        div.appendChild(Object.assign(document.createElement('span'), { innerText: Title, title: Raw }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(Object.assign(document.createElement('u'), { innerText: fr ? 'Tamponné par' : 'Stamped By' }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? 'Nom: ' : 'Name: ')); div.appendChild(new Text(FullName)); div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? 'Courriel: ' : 'Email: '));
-        div.appendChild(Object.assign(document.createElement('a'), { innerText: Email, href: `mailto:${Email}`, target: '_blank' }));
-        div.appendChild(document.createElement('br'));
-        div.appendChild(new Text(fr ? `Numéro de membre ${Assoc.Name}: ` : `${Assoc.Name} Member Number: `));
-        div.appendChild(new Text(MemberNumber));
+        div.replaceChildren();
+        const section = (title) => {
+          const h = document.createElement('div');
+          h.className = 'meta-section';
+          h.textContent = title;
+          div.appendChild(h);
+        };
+        const row = (key, value) => {
+          const r = document.createElement('div');
+          r.className = 'meta-row';
+          const k = document.createElement('span'); k.className = 'meta-key'; k.textContent = key;
+          const v = document.createElement('span'); v.className = 'meta-val';
+          if (value instanceof Node) v.appendChild(value); else v.textContent = value;
+          r.append(k, v);
+          div.appendChild(r);
+        };
+        section(fr ? 'Document' : 'Document');
+        row(fr ? 'Nom' : 'Name', DocumentDescription);
+        row(fr ? 'Paire de langues' : 'Language pair', LanguagePair);
+        row(fr ? 'Date de tamponnage' : 'Date stamped',
+            Object.assign(document.createElement('span'), { textContent: Title, title: Raw }));
+        section(fr ? 'Tamponné par' : 'Stamped by');
+        row(fr ? 'Nom' : 'Name', FullName);
+        row(fr ? 'Courriel' : 'Email',
+            Object.assign(document.createElement('a'), { textContent: Email, href: `mailto:${Email}`, target: '_blank' }));
+        row(fr ? `Numéro de membre ${Assoc.Name}` : `${Assoc.Name} member number`, MemberNumber);
       } else makeStibcDialog();
   } catch (e) { reportVerifyFailure(e); }
 }
