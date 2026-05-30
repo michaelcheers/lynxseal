@@ -770,14 +770,15 @@ function customDeclarationSelect() {
         Logo.setAttribute('value', ''); Signature.setAttribute('value', '');
         setDefaultLogoType(profile.LogoType === 'Custom' ? 'existing' : profile.LogoType);
         setDefaultSignatureType(profile.HasSignature ? 'existing' : 'None');
-        // Set defaultValue (not just .value): the Edit button opens the dialog
-        // via openProfileEditDlg(), which calls profileEditForm.reset(). reset()
-        // restores controls to their defaults, so a plain .value here would be
-        // wiped. ProfileName survives because it's set via setAttribute('value')
-        // above; textareas need defaultValue for the same reason. Assigning
-        // defaultValue also updates the displayed value (controls aren't dirty).
-        ContactInfo.defaultValue = profile.ContactInfo;
-        CredentialInfo.defaultValue = profile.CredentialInfo;
+        // Set the textarea's child text node (its default content), not .value:
+        // the Edit button opens the dialog via openProfileEditDlg() which calls
+        // profileEditForm.reset(), and reset() restores controls to their
+        // defaults — a plain .value would be wiped. Matches the SuperSigning
+        // Index.cshtml approach.
+        ContactInfo.innerHTML = '';
+        ContactInfo.appendChild(new Text(profile.ContactInfo));
+        CredentialInfo.innerHTML = '';
+        CredentialInfo.appendChild(new Text(profile.CredentialInfo));
         break;
     }
   } catch (e) { reportErrorAlert(e); }
