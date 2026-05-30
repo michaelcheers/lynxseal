@@ -26,7 +26,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js" integrity="sha256-2N9WG5+6mOJPLlEw5AlIgJKBu7xVogxBI1nxoKXrNaY=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" integrity="sha256-eeyG+ChWAFsciHkFz8z8++w4Icphx/1alS+qX3ePeRw=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<script src="/js/render-declaration.js?v=1.01"></script>
+<script src="/js/render-declaration.js?v=1.02"></script>
 <script src="/js/pdf-signing.js?v=1"></script>
 <script src="/js/argon2-init.js?v=1"></script>
 
@@ -234,8 +234,8 @@
   .drop.filled .drop-file { display: flex; align-items: center; gap: 10px; }
   .drop-file .drop-icon { width: 28px; height: 28px; flex: 0 0 28px; display: flex; align-items: center; justify-content: center; background: var(--paper-2); border-radius: 4px; color: var(--dim); }
   .drop-file .drop-meta { flex: 1; min-width: 0; }
-  .drop-file .drop-name { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .drop-file .drop-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .drop-file .drop-name { display: block; font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .drop-file .drop-sub { display: block; font-size: 11px; color: var(--dim); margin-top: 2px; }
   .drop-file .drop-clear { font-size: 11px; color: var(--dim); padding: 4px 8px; border-radius: 4px; border: 0; background: transparent; cursor: pointer; }
   .drop-file .drop-clear:hover { background: var(--accent-soft); color: var(--accent-ink); }
   /* The actual <input type=file> is layered on top of the .drop so it
