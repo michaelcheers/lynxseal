@@ -389,8 +389,12 @@
   #specificProgressMsg { color: var(--dim); font-size: 12px; }
 
   /* ── Modal dialogs (#modalDlg, #profileEditDlg) ──────────────────────── */
+  /* Dialogs start BELOW the 56px topbar so the navbar stays visible (and
+     usable) while a modal is open. #mainContent is its own stacking context
+     (z-index:2), so the topbar can't be lifted above the z-index:999999 modal —
+     offsetting the overlay is the reliable way to keep it on screen. */
   .popup-outer {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    position: fixed; top: 56px; left: 0; width: 100%; height: calc(100% - 56px);
     overflow: hidden; z-index: 999999;
     background: rgba(21,20,15,0.55);
     backdrop-filter: blur(4px);
@@ -398,9 +402,9 @@
   }
   .popup-inner {
     background: var(--paper);
-    position: fixed; top: 24px; bottom: 24px;
+    position: fixed; top: 80px; bottom: 24px;
     left: 50%; transform: translateX(-50%);
-    width: min(calc(100vh - 48px) * 1.06, calc(100vw - 48px));
+    width: min(calc((100vh - 104px) * 1.06), calc(100vw - 48px));
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-2);
     display: flex; flex-direction: column;
