@@ -272,6 +272,20 @@
   .seg input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
   .seg label:has(input[type=radio]:checked) { background: var(--ink); color: var(--card); }
 
+  /* Stamp colour swatch row (mockup style) */
+  .swatch-row { display: flex; gap: 8px; align-items: center; }
+  .swatch {
+    width: 28px; height: 28px; padding: 0; flex-shrink: 0;
+    border-radius: 6px; cursor: pointer;
+    background: var(--sw);
+    border: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+    transition: border-color .12s, transform .04s;
+  }
+  .swatch:hover { transform: translateY(-1px); }
+  .swatch.on { border: 2px solid var(--ink); }
+  .swatch-label { margin-left: 4px; }
+
   /* Step rail */
   .step-rail .step {
     display: flex; align-items: flex-start; gap: 12px;
@@ -725,16 +739,20 @@
               </div>
             </div>
 
-            <!-- Stamp color (ATIO-only — JS toggles visibility) -->
+            <!-- Stamp color — swatch row (mockup style). The real value lives in
+                 the hidden input so existing form reads (name=StampColor) work
+                 unchanged; ui-shell.js wires the swatch clicks + selected state. -->
             <div class="field" id="stampColorPicker" style="display:none">
               <label class="label"><span class="en-only">Stamp color</span><span class="fr-only">Couleur du tampon</span></label>
-              <select class="ctrl" name="StampColor">
-                <option class="en-only" value="#000000">Black</option><option class="fr-only" value="#000000">Noir</option>
-                <option class="en-only" value="#EE0000">Red</option><option class="fr-only" value="#EE0000">Rouge</option>
-                <option class="en-only" value="#418C2C">Green</option><option class="fr-only" value="#418C2C">Vert</option>
-                <option class="en-only" value="#2910C0">Blue</option><option class="fr-only" value="#2910C0">Bleu</option>
-                <option class="en-only" value="#7030A0">Purple</option><option class="fr-only" value="#7030A0">Violet</option>
-              </select>
+              <input type="hidden" name="StampColor" value="#000000">
+              <div class="swatch-row" data-swatch-row>
+                <button type="button" class="swatch" data-value="#000000" data-label-en="Black"  data-label-fr="Noir"   style="--sw:#000000" title="Black"></button>
+                <button type="button" class="swatch" data-value="#EE0000" data-label-en="Red"    data-label-fr="Rouge"  style="--sw:#EE0000" title="Red"></button>
+                <button type="button" class="swatch" data-value="#418C2C" data-label-en="Green"  data-label-fr="Vert"   style="--sw:#418C2C" title="Green"></button>
+                <button type="button" class="swatch" data-value="#2910C0" data-label-en="Blue"   data-label-fr="Bleu"   style="--sw:#2910C0" title="Blue"></button>
+                <button type="button" class="swatch" data-value="#7030A0" data-label-en="Purple" data-label-fr="Violet" style="--sw:#7030A0" title="Purple"></button>
+                <span class="swatch-label meta" data-swatch-label></span>
+              </div>
             </div>
 
             <!-- Declaration profile / customization -->
@@ -978,7 +996,7 @@
   });
 </script>
 
-<script src="/js/ui-shell.js?v=1"></script>
+<script src="/js/ui-shell.js?v=2"></script>
 <script src="/js/index-page.js?v=3"></script>
 </body>
 </html>

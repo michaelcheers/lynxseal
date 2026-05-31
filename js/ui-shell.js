@@ -45,6 +45,8 @@
     langBtn.addEventListener('click', () => {
       const next = document.body.classList.contains('lang-fr') ? 'en' : 'fr';
       if (typeof window.switchLanguage === 'function') window.switchLanguage(next);
+      // Let same-page widgets (e.g. the swatch-row colour name) re-localize.
+      document.dispatchEvent(new CustomEvent('lynxseal:langchange'));
     });
   }
 
@@ -105,10 +107,40 @@
     }
   }
 
+  // Stamp-colour swatch row: clicking a swatch writes its value into the
+  // hidden <input name=StampColor> (so existing form reads are unchanged),
+  // marks it selected, and shows the localized colour name. Falls back
+  // gracefully when the row isn't on the page.
+  function initSwatchRow() {
+    const row = document.querySelector('[data-swatch-row]');
+    if (!row) return;
+    const input = row.parentElement.querySelector('input[name=StampColor]');
+    const labelEl = row.querySelector('[data-swatch-label]');
+    const swatches = Array.from(row.querySelectorAll('.swatch'));
+    if (!input || !swatches.length) return;
+    const isFr = () => document.body.classList.contains('lang-fr');
+    function select(sw) {
+      input.value = sw.dataset.value;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      swatches.forEach(s => s.classList.toggle('on', s === sw));
+      if (labelEl) labelEl.textContent = (isFr() ? sw.dataset.labelFr : sw.dataset.labelEn) || '';
+    }
+    swatches.forEach(sw => sw.addEventListener('click', () => select(sw)));
+    // Initial selection: match the hidden input's current value, else first.
+    const initial = swatches.find(s => s.dataset.value === input.value) || swatches[0];
+    select(initial);
+    // Keep the colour name localized when the language toggles.
+    document.addEventListener('lynxseal:langchange', () => {
+      const cur = swatches.find(s => s.classList.contains('on'));
+      if (cur && labelEl) labelEl.textContent = (isFr() ? cur.dataset.labelFr : cur.dataset.labelEn) || '';
+    });
+  }
+
   function init() {
     initBranding();
     initLangToggle();
     initDropZones();
+    initSwatchRow();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
