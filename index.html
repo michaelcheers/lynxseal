@@ -745,12 +745,15 @@
             <div class="field" id="stampColorPicker" style="display:none">
               <label class="label"><span class="en-only">Stamp color</span><span class="fr-only">Couleur du tampon</span></label>
               <input type="hidden" name="StampColor" value="#000000">
+              <!-- data-value = the real stamp colour written to the form / PDF.
+                   --sw = a muted display swatch (mockup palette) so the UI reads
+                   softer than the saturated ink that actually prints. -->
               <div class="swatch-row" data-swatch-row>
-                <button type="button" class="swatch" data-value="#000000" data-label-en="Black"  data-label-fr="Noir"   style="--sw:#000000" title="Black"></button>
-                <button type="button" class="swatch" data-value="#EE0000" data-label-en="Red"    data-label-fr="Rouge"  style="--sw:#EE0000" title="Red"></button>
-                <button type="button" class="swatch" data-value="#418C2C" data-label-en="Green"  data-label-fr="Vert"   style="--sw:#418C2C" title="Green"></button>
-                <button type="button" class="swatch" data-value="#2910C0" data-label-en="Blue"   data-label-fr="Bleu"   style="--sw:#2910C0" title="Blue"></button>
-                <button type="button" class="swatch" data-value="#7030A0" data-label-en="Purple" data-label-fr="Violet" style="--sw:#7030A0" title="Purple"></button>
+                <button type="button" class="swatch" data-value="#000000" data-label-en="Black"  data-label-fr="Noir"   style="--sw:#15140F" title="Black"></button>
+                <button type="button" class="swatch" data-value="#EE0000" data-label-en="Red"    data-label-fr="Rouge"  style="--sw:#B83A2B" title="Red"></button>
+                <button type="button" class="swatch" data-value="#418C2C" data-label-en="Green"  data-label-fr="Vert"   style="--sw:#2F6B3E" title="Green"></button>
+                <button type="button" class="swatch" data-value="#2910C0" data-label-en="Blue"   data-label-fr="Bleu"   style="--sw:#1B2E5C" title="Blue"></button>
+                <button type="button" class="swatch" data-value="#7030A0" data-label-en="Purple" data-label-fr="Violet" style="--sw:#6A2C6E" title="Purple"></button>
                 <span class="swatch-label meta" data-swatch-label></span>
               </div>
             </div>
