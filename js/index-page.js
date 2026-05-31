@@ -225,13 +225,22 @@ async function _buildRenderInputs(formData) {
     verifyURL: `https://${isFrench ? 'verifier' : 'verify'}.${_getBaseDomain(ctx.association.domainName)}`,
     associationLongName: ctx.association.longName,
     associationShortName: ctx.association.name,
+    supportsQr: !!ctx.association.supportsQr,
     timeZoneID: ctx.association.timeZoneId,
     languagePairs: isAtio ? _shortLangPairs(langFrom, langTo) : '',
     contactInfo: cust?.ContactInfo || null,
     credentialInfo: cust?.CredentialInfo || null,
     declarationLanguage: declLanguage,
     isFemale: gender === 'f',
-    stampColor: '#000000',
+    // Stamp colour from the form's picker (STIBC requested coloured stamps);
+    // renderer's _hexToRgb defaults to black on missing/garbage input. Applies
+    // to the inline declaration-page stamp (the every-page canvas stamp reads
+    // the picker separately in createPackage).
+    stampColor: formData.get('StampColor') || '#000000',
+    // Bilingual declaration (STIBC): the admin-authored source-language block,
+    // matched by the document's source (from) language. null when none exists,
+    // in which case the renderer draws the English block only.
+    declarationTranslation: (ctx.declarationTranslations || []).find(t => t.languageName === langFrom) || null,
   };
 }
 async function renderDeclarationClientSide(formData) {
@@ -282,8 +291,10 @@ async function _formDataWithSanitizedPngs(form) {
     document.getElementById('footerSpaceTargetLbl').style.display = '';
     document.getElementById('stampingPrefBlock').style.display = 'none';
   }
+  // Stamp colour picker is now offered to every tenant (STIBC requested
+  // coloured stamps; previously this was ATIO-only).
+  document.getElementById('stampColorPicker').style.display = '';
   if (isAtio) {
-    document.getElementById('stampColorPicker').style.display = '';
     document.getElementById('signatureSection').style.display = '';
   }
   document.getElementById('stibcLogoLabel').textContent = ctx.association.name;
@@ -443,6 +454,9 @@ async function createPackage() {
     formData.append('descr', document.querySelector('#pkgForm [name=descr]').value);
     const declLang = document.querySelector('#pkgForm [name=declarationLanguage]');
     formData.append('declLanguage', declLang ? declLang.value : 'English');
+    // Stamp colour picker (shown for all tenants now) → declaration stamp.
+    const stampColorSel = document.querySelector('#pkgForm [name=StampColor]');
+    if (stampColorSel) formData.append('StampColor', stampColorSel.value);
     if (declarationType.value === 'newProfile') throw new Error('SuperSigning.UserVisibleException: Cannot create package: The declaration type is set to an invalid value. Try refreshing the page.');
     if (declarationType.value !== 'default') formData.append('profileID', declarationType.value);
     if (q('gender') === 'f') formData.append('gender', 'f');
@@ -499,8 +513,10 @@ async function createPackage() {
     let stamp;
     if (stampEveryPage) {
       specificProgressMsg.innerHTML = '<span class=en-only>Fetching Stamp</span><span class=fr-only>Récupération du tampon</span>';
+      // Stamp colour applies to all tenants now (was ATIO-only). Falls back
+      // to black if the picker isn't present for some reason.
       const stampColorSelect = document.querySelector('#pkgForm [name=StampColor]');
-      const stampColor = isAtio && stampColorSelect ? stampColorSelect.value : '#000000';
+      const stampColor = stampColorSelect ? stampColorSelect.value : '#000000';
       const stampBytes = await window.RenderDeclaration.renderStampPng({
         firstName: window.DeclarationContext.member.firstName,
         memberNumber: window.DeclarationContext.member.memberNumber,
@@ -850,6 +866,8 @@ async function getDeclarationPreview() {
   formData.append('descr', document.body.classList.contains('lang-fr') ? '(Votre titre de document)' : '(Your document title)');
   const dl = document.querySelector('#pkgForm [name=declarationLanguage]');
   formData.append('declLanguage', dl ? dl.value : 'English');
+  const stampColorSelPrev = document.querySelector('#pkgForm [name=StampColor]');
+  if (stampColorSelPrev) formData.append('StampColor', stampColorSelPrev.value);
   const profileData = new FormData(profileEditForm);
   formData.append('profileJSON', JSON.stringify({
     Id: editingId.value === '' ? 0 : +editingId.value,

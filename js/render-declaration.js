@@ -141,6 +141,21 @@
   const ascentFor = (size) => size * ASCENT_RATIO;
   const lineHFor = (size) => size * LINEH_RATIO;
 
+  // Parse a "#rrggbb" hex colour into a pdf-lib rgb() (0..1 components).
+  // Defaults to black on null/short/garbage input so a bad stampColor can
+  // never make the stamp invisible.
+  function _hexToRgb(hex) {
+    const { rgb } = window.PDFLib;
+    if (typeof hex === 'string') {
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+      if (m) {
+        const n = parseInt(m[1], 16);
+        return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+      }
+    }
+    return rgb(0, 0, 0);
+  }
+
   // Per-codepoint font pick: walk an ordered list of {pdfFont, kitFont}
   // entries and return the first that has the glyph; else the first entry.
   function pickFont(cp, chain) {
@@ -277,6 +292,25 @@
     ctx.y -= h;
   }
 
+  // Substitute the admin-authored declaration-translation placeholders with
+  // this document's values. Unknown tokens are left as-is. {documents} expands
+  // to the document description (the list of translated documents); {date} uses
+  // the same association-timezone date the English block shows.
+  function _fillTranslationTokens(text, inputs) {
+    if (text == null) return '';
+    const fullName = [inputs.translatorsFirstName, inputs.translatorsLastName].filter(s => s).join(' ');
+    const repl = {
+      '{fullName}': fullName,
+      '{memberNumber}': inputs.translatorsMemberNumber || '',
+      '{fromLanguage}': inputs.fromLanguage || '',
+      '{toLanguage}': inputs.toLanguage || '',
+      '{date}': formatDate(inputs.declarationLanguage, inputs.timeZoneID),
+      '{documents}': inputs.documentDescription || '',
+    };
+    return String(text).replace(/\{fullName\}|\{memberNumber\}|\{fromLanguage\}|\{toLanguage\}|\{date\}|\{documents\}/g,
+      (m) => repl[m] != null ? repl[m] : m);
+  }
+
   // Builds the declaration body text. Mirrors GenerateDeclaration.cs:296-355
   // — branches on isATIO and isFrench, with French vowel-aware articles and
   // gendered terms for ATIO French.
@@ -348,6 +382,12 @@
     const PDFLib = window.PDFLib;
     const { rgb, pushGraphicsState, popGraphicsState, translate, rotateRadians } = PDFLib;
 
+    // Stamp colour (STIBC requested coloured stamps). params.stampColor is a
+    // hex string like "#418C2C"; default to black. Applied to both rings and
+    // all stamp text so the inline declaration stamp matches the every-page
+    // canvas stamp colour.
+    const stampRgb = _hexToRgb(params.stampColor);
+
     const lWidth = 480;
     const lFullR = 50;
     const mult = lFullR / 50;
@@ -418,13 +458,13 @@
     const innerCirc = 2 * Math.PI * innerCircRadius * scale;
     page.drawCircle({
       x: cxPdf, y: cyPdf, size: lFullR * scale,
-      borderColor: rgb(0, 0, 0),
+      borderColor: stampRgb,
       borderWidth: mult * 4 * scale,
       borderDashArray: fitDashArray(outerCirc, dashUnit, gapUnit),
     });
     page.drawCircle({
       x: cxPdf, y: cyPdf, size: innerCircRadius * scale,
-      borderColor: rgb(0, 0, 0),
+      borderColor: stampRgb,
       borderWidth: mult * scale,
       borderDashArray: fitDashArray(innerCirc, dashUnit, gapUnit),
     });
@@ -445,7 +485,7 @@
       page.pushOperators(pushGraphicsState(), translate(px, py), rotateRadians(pdfRot));
       const sizePt = outerDrawSizeL * scale;
       const charWPt = segoeFont.widthOfTextAtSize(ch, sizePt);
-      page.drawText(ch, { x: -charWPt / 2, y: 0, font: segoeFont, size: sizePt });
+      page.drawText(ch, { x: -charWPt / 2, y: 0, font: segoeFont, size: sizePt, color: stampRgb });
       page.pushOperators(popGraphicsState());
       angle += chArc;
     }
@@ -474,6 +514,7 @@
         y: toY(yL),
         font: f.pdfFont,
         size: curSizeL * scale,
+        color: stampRgb,
       });
     }
     drawCenteredLine(params.firstName,    cyL - fs * 0.75);
@@ -506,6 +547,7 @@
     // Determine which fonts we actually need based on the text content, then
     // lazy-load just those. Lato (always) and Arial cover ~99% of cases without
     // pulling Malgun (17MB), YaHei (25MB), etc.
+    const tr = inputs.declarationTranslation || null;
     const bodyTexts = [
       inputs.translatorsFirstName, inputs.translatorsLastName, inputs.translatorsMemberNumber,
       inputs.documentDescription, inputs.contactInfo, inputs.credentialInfo,
@@ -513,6 +555,10 @@
       inputs.associationLongName, inputs.languagePairs,
       inputs.verifyURL,
       buildDeclarationText(inputs), // includes "Disclaimer:", "Avertissement :", etc.
+      // Bilingual declaration (STIBC): the source-language block's text is
+      // typically CJK/non-Latin, so feed it to the font walker too — otherwise
+      // the fallback chain wouldn't load Malgun/YaHei/etc. for these glyphs.
+      tr && tr.title, tr && tr.certificationStatement, tr && tr.documentsLabel, tr && tr.translatorsNote,
     ];
     const bodyFontsNeeded = await ensureFontsForTexts(bodyTexts, BODY_FALLBACK_ORDER);
     let stampFontsNeeded = null;
@@ -555,10 +601,12 @@
     const baseSize = isAtio ? 10.5 : 12;
     const sectionGap = isAtio ? 15 : 20;
 
-    // QuestPDF reserves page.Footer().Height(120) on ATIO for the QR overlay
-    // AddQRCode draws on every page later. Mirror that by raising yMin so no
-    // body content lands in the bottom 120pt for ATIO.
-    const footerReserve = isAtio ? 120 : 0;
+    // Reserve page.Footer().Height(120) for the QR overlay AddQRCode draws on
+    // every page later, so no body content lands in the bottom 120pt. This is
+    // keyed on supportsQr (every QR tenant needs the footer), not on ATIO —
+    // STIBC now uses the QR footer too. Falls back to isAtio when the caller
+    // doesn't pass supportsQr (keeps older callers' behavior unchanged).
+    const footerReserve = (inputs.supportsQr ?? isAtio) ? 120 : 0;
 
     // Top of content area after PaddingVertical(1, Centimetre) inside the Content block.
     const yTop = pageH - marginYTop - cm;
@@ -651,6 +699,7 @@
         firstName: inputs.translatorsFirstName,
         lastName: inputs.translatorsLastName,
         memberNumber: inputs.translatorsMemberNumber,
+        stampColor: inputs.stampColor,
       }, marginX, ctx.y, contentW, stampFontsNeeded);
       ctx.y -= sectionGap;
     }
@@ -694,6 +743,32 @@
       ctx.y -= sectionGap;
       for (const line of wrapTextLines(inputs.credentialInfo, contentW, baseSize, bodyChain)) {
         drawCentered(ctx, line, baseSize, bodyChain);
+      }
+    }
+
+    // Bilingual declaration (STIBC requested): a second declaration block in the
+    // document's source language, stacked below the English one. Drawn only when
+    // the association supplied a translation for this source language (matched by
+    // languageName in _buildRenderInputs). Mirrors the English block's structure:
+    // dotted rule, title, certification statement, documents label + list, date,
+    // translator's note.
+    if (tr) {
+      ctx.y -= sectionGap;
+      _ensureSpace(ctx, lineHFor(baseSize) * 3);
+      drawWrapped(ctx, '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .', marginX, contentW, baseSize, bodyChain, { color: rgb(0.6, 0.6, 0.6) });
+      ctx.y -= sectionGap;
+      if (tr.title) { drawCentered(ctx, _fillTranslationTokens(tr.title, inputs), baseSize, bodyChain); ctx.y -= sectionGap; }
+      drawWrapped(ctx, _fillTranslationTokens(tr.certificationStatement, inputs), marginX, contentW, baseSize, bodyChain);
+      if (tr.documentsLabel || inputs.documentDescription) {
+        ctx.y -= sectionGap;
+        if (tr.documentsLabel) drawLeft(ctx, _fillTranslationTokens(tr.documentsLabel, inputs), marginX, baseSize, bodyChain);
+        drawWrapped(ctx, inputs.documentDescription, marginX, contentW, baseSize, bodyChain);
+      }
+      ctx.y -= sectionGap;
+      drawCentered(ctx, formatDate(inputs.declarationLanguage, inputs.timeZoneID), baseSize, bodyChain);
+      if (tr.translatorsNote) {
+        ctx.y -= sectionGap;
+        drawWrapped(ctx, _fillTranslationTokens(tr.translatorsNote, inputs), marginX, contentW, baseSize, bodyChain);
       }
     }
 
