@@ -75,19 +75,10 @@ function switchLanguage(lang) {
 }
 switchLanguage(new URLSearchParams(location.search).get('lang') || 'en');
 
-// MUST match site.js / SuperSigning exactly. The decoded string always ends in
-// 'A=' (GenerateEncryptionKey zeroes the low nibble), so padding is restored by
-// appending the literal 'A=' — NOT by padEnd('='), which yields '==' and makes
-// atob() decode the wrong key bytes → wrong argon2 key → AES-CBC OperationError
-// at decrypt. The O→0 / l→I steps must also run before -→O / =→l.
-function fromCustomBase64(s) {
-  return s.replaceAll('O', '0').replaceAll('l', 'I').replaceAll('-', 'O').replaceAll('=', 'l') + 'A=';
-}
-function reportErrorAlert(e) { console.error(e); alert(e.message || e); }
-function getErrorOrNull(e) {
-  if (e && e.message && e.message.startsWith('SuperSigning.UserVisibleException:')) return e.message.replace(/^SuperSigning\.UserVisibleException:\s*/, '');
-  return null;
-}
+// fromCustomBase64 / getErrorOrNull / reportErrorAlert come from site.js (loaded
+// before this script). A local fromCustomBase64 used to live here and had a
+// padding bug (padEnd('=') → '==' instead of 'A=') that derived the wrong argon2
+// key and broke every QR decrypt — keep the single canonical copy in site.js.
 
 // Trust anchor — populated from /api/public-context root cert(s). Each entry
 // is a node-forge X.509 certificate. trustedCaStore is the same set indexed
