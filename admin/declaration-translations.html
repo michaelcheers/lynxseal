@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declaration Translations</title>
+<link rel="stylesheet" href="/css/lynxseal.css">
+<script src="/js/config.js"></script>
+<script src="/js/portal-bridge.js"></script>
+<script src="/js/api.js"></script>
+<style>
+  main { padding: 2em; max-width: 880px; margin: 0 auto; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 1.5em; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; font-size: 14px; }
+  th { background: #f3f3f3; }
+  td .snippet { color: #555; white-space: pre-wrap; max-height: 4em; overflow: hidden; display: block; }
+  form label { display: block; margin-bottom: 0.75em; }
+  form label > span { display: block; font-weight: 600; margin-bottom: 2px; }
+  form input[type=text], form textarea { width: 100%; box-sizing: border-box; padding: 6px; }
+  form textarea { min-height: 5em; font-family: inherit; }
+  .hint { color: #555; font-size: 13px; }
+  .row-actions button { margin-right: 6px; }
+  #result { margin-top: 1em; }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="/admin/">&larr; Admin Hub</a></p>
+  <h1>Declaration Translations</h1>
+  <p class="hint">
+    Manage the source-language declaration that appears below the English declaration
+    on the certificate (e.g. the Chinese version for Chinese&rarr;English translations).
+    A translation is matched to a document by its <strong>source language name</strong>
+    (must exactly match the certified-language "from" name, e.g. <code>Chinese</code>).
+  </p>
+  <p class="hint">
+    These fields may contain placeholder tokens that get filled in per document:
+    <code>{fullName}</code>, <code>{memberNumber}</code>, <code>{fromLanguage}</code>,
+    <code>{toLanguage}</code>, <code>{date}</code>, <code>{documents}</code>.
+  </p>
+
+  <table id="list"><thead>
+    <tr><th>Language</th><th>Title</th><th>Statement</th><th></th></tr>
+  </thead><tbody></tbody></table>
+
+  <h2 id="formHeading">Add a translation</h2>
+  <form id="editForm">
+    <input type="hidden" name="id" value="">
+    <label><span>Source language name</span>
+      <input type="text" name="languageName" required placeholder="Chinese">
+    </label>
+    <label><span>Title</span>
+      <input type="text" name="title" required placeholder="译者声明">
+    </label>
+    <label><span>Certification statement</span>
+      <textarea name="certificationStatement" required placeholder="本人 {fullName}（会员号 {memberNumber}）…"></textarea>
+    </label>
+    <label><span>Documents label <span class="hint">(optional)</span></span>
+      <input type="text" name="documentsLabel" placeholder="所译文件清单：">
+    </label>
+    <label><span>Translator's note <span class="hint">(optional)</span></span>
+      <textarea name="translatorsNote"></textarea>
+    </label>
+    <button type="submit">Save</button>
+    <button type="button" id="cancelEdit" style="display:none">Cancel edit</button>
+  </form>
+  <div id="result"></div>
+<script>
+const tbody = document.querySelector('#list tbody');
+const form = document.getElementById('editForm');
+const result = document.getElementById('result');
+const formHeading = document.getElementById('formHeading');
+const cancelBtn = document.getElementById('cancelEdit');
+
+function snippet(s) { return (s || '').slice(0, 80) + ((s || '').length > 80 ? '…' : ''); }
+
+async function load() {
+  tbody.innerHTML = '';
+  let rows;
+  try { rows = await api.get('/api/admin/declaration-translations'); }
+  catch (e) { result.textContent = 'Failed to load: ' + (e.message || e); return; }
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const tdLang = document.createElement('td'); tdLang.textContent = r.languageName;
+    const tdTitle = document.createElement('td'); tdTitle.textContent = r.title;
+    const tdStmt = document.createElement('td');
+    const span = document.createElement('span'); span.className = 'snippet'; span.textContent = snippet(r.certificationStatement);
+    tdStmt.appendChild(span);
+    const tdAct = document.createElement('td'); tdAct.className = 'row-actions';
+    const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Edit';
+    edit.addEventListener('click', () => startEdit(r));
+    const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete';
+    del.addEventListener('click', () => remove(r));
+    tdAct.append(edit, del);
+    tr.append(tdLang, tdTitle, tdStmt, tdAct);
+    tbody.appendChild(tr);
+  }
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td'); td.colSpan = 4; td.textContent = 'No translations yet.'; td.style.color = '#777';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+}
+
+function startEdit(r) {
+  form.id.value = r.id;
+  form.languageName.value = r.languageName;
+  form.title.value = r.title;
+  form.certificationStatement.value = r.certificationStatement;
+  form.documentsLabel.value = r.documentsLabel || '';
+  form.translatorsNote.value = r.translatorsNote || '';
+  formHeading.textContent = 'Edit translation: ' + r.languageName;
+  cancelBtn.style.display = '';
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function resetForm() {
+  form.reset();
+  form.id.value = '';
+  formHeading.textContent = 'Add a translation';
+  cancelBtn.style.display = 'none';
+}
+cancelBtn.addEventListener('click', resetForm);
+
+async function remove(r) {
+  if (!confirm(`Delete the ${r.languageName} declaration translation?`)) return;
+  try {
+    await api.post('/api/admin/declaration-translations?delete=1', { id: r.id });
+    result.textContent = `Deleted ${r.languageName}.`;
+    await load();
+  } catch (e) { result.textContent = 'Error: ' + (e.message || e); }
+}
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    id: form.id.value ? +form.id.value : null,
+    languageName: form.languageName.value.trim(),
+    title: form.title.value,
+    certificationStatement: form.certificationStatement.value,
+    documentsLabel: form.documentsLabel.value,
+    translatorsNote: form.translatorsNote.value,
+  };
+  try {
+    await api.post('/api/admin/declaration-translations', body);
+    result.textContent = 'Saved.';
+    resetForm();
+    await load();
+  } catch (e) { result.textContent = 'Error: ' + (e.message || e); }
+});
+
+load();
+</script>
+</main>
+</body>
+</html>

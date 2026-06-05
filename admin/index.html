@@ -14,16 +14,21 @@
   <a href="/admin/stats.html">View Statistics</a><br>
   <span id="memberMgmt">
     <a href="/admin/update-members-data.html">Update Members Data</a><br>
-    <a href="/admin/remove-user.html">Delete a User</a>
+    <a href="/admin/remove-user.html">Delete a User</a><br>
+  </span>
+  <span id="declTranslations" style="display:none">
+    <a href="/admin/declaration-translations.html">Declaration Translations</a>
   </span>
 </main>
 <script>
 // Some hosted tenants don't get member-data update / remove tools.
+// Declaration translations (bilingual declaration) is a QR-tenant feature.
 (async () => {
   try {
     const ctx = await api.get('/api/public-context');
     const restricted = ['ATIO', 'ATIM']; // tenants that hide the member-mgmt links
     if (restricted.includes(ctx.association.name)) document.getElementById('memberMgmt').remove();
+    if (ctx.association.supportsQr) document.getElementById('declTranslations').style.display = '';
   } catch {}
 })();
 </script>

@@ -90,6 +90,131 @@ function getErrorOrNull(e) {
 let trustedCertificates = [];
 let trustedCaStore = null;
 
+// DigiCert Trusted Root G4 — pinned trust anchor for the RFC 3161
+// trusted-timestamp (PAdES-T) token. The signing flow stamps each signature
+// with a DigiCert token; pinning the root means only DigiCert-issued tokens are
+// trusted, regardless of who relayed the timestamp request. Self-contained: the
+// token + its chain live in the PDF, so this verifies offline.
+const DIGICERT_G4_ROOT_B64 =
+  'MIIFkDCCA3igAwIBAgIQBZsbV56OITLiOQe9p3d1XDANBgkqhkiG9w0BAQwFADBiMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGlnaWNlcnQuY29tMSEwHwYDVQQDExhEaWdpQ2VydCBUcnVzdGVkIFJvb3QgRzQwHhcNMTMwODAxMTIwMDAwWhcNMzgwMTE1MTIwMDAwWjBiMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGlnaWNlcnQuY29tMSEwHwYDVQQDExhEaWdpQ2VydCBUcnVzdGVkIFJvb3QgRzQwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQC/5pBzaN675F1KPDAiMGkz7MKnJS7JIT3yithZwuEppz1Yq3aaza57G4QNxDAf8xukOBbrVsaXbR2rsnnyyhHS5F/WBTxSD1Ifxp4VpX6+n6lXFllVcq9ok3DCsrp1mWpzMpTREEQQLt+C8weE5nQ7bXHiLQwb7iDVySAdYyktzuxeTsiT+CFhmzTrBcZe7FsavOvJz82sNEBfsXpm7nfISKhmV1efVFiODCu3T6cw2Vbuyntd463JT17lNecxy9qTXtyOj4DatpGYQJB5w3jHtrHEtWoYOAMQjdjUN6QuBX2I9YI+EJFwq1WCQTLX2wRzKm6RAXwhTNS8rhsDdV14Ztk6MUSaM0C/CNdaSaTC5qmgZ92kJ7yhTzm1EVgX9yRcRo9k98FpiHaYdj1ZXUJ2h4mXaXpI8OCiEhtmmnTK3kse5w5jrubU75KSOp493ADkRSWJtppEGSt+wJS00mFt6zPZxd9LBADMfRyVw4/3IbKyEbe7f/LVjHAsQWCqsWMYRJUadmJ+9oCw++hkpjPRiQfhvbfmQ6QYuKZ3AeEPlAwhHbJUKSWJbOUOUlFHdL4mrLZBdd56rF+NP8m800ERElvlEFDrMcXKchYiCd98THU/Y+whX8QgUWtvsauGi0/C1kVfnSD8oR7FwI+isX4KJpn15GkvmB0t9dmpsh3lGwIDAQABo0IwQDAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQU7NfjgtJxXWRM3y5nP+e6mK4cD08wDQYJKoZIhvcNAQEMBQADggIBALth2X2pbL4XxJEbw6GiAI3jZGgPVs93rnD5/ZpKmbnJeFwMDF/k5hQpVgs2SV1EY+CtnJYYZhsjDT156W1r1lT40jzBQ0CuHVD1UvyQO7uYmWlrx8GnqGikJ9yd+SeuMIW59mdNOj6PWTkiU0TryF0Dyu1Qen1iIQqAyHNm0aAFYF/opbSnr6j3bTWcfFqK1qI4mfN4i/RN0iAL3gTujJtHgXINwBQy7zBZLq7gcfJW5GqXb5JQbZaNaHqasjYUegbyJLkJEVDXCLG4iXqEI2FCKeWjzaIgQdfRnGTZ6iahixTXTBmyUEFxPT9NcCOGDErcgdLMMpSEDQgJlxxPwO5rIHQw0uA5NBCFIRUBCOhVMt5xSdkoF1BN5r5N0XWs0Mr7QbhDparTwwVETyw2m+L64kW4I1NsBm9nVX9GtUw/bihaeSbSpKhil9Ie4u1Ki7wb/UdKDd9nZn6yW0HQO+T0O/QEY+nvwlQAUaCKKsnOeMzV6ocEGLPOr0mIr/OSmbaz5mEP0oUA51Aa5BuVnRmhuZyxm7EAHu/QD09CbMkKvO5D+jpxpchNJqU1/YldvIViHTLSoCtU7ZpXwdv6EM8Zt4tKG48BtieVU+i2iW1bvGjUI+iLUaJW+fCmgKDWHrO8Dw9TdSmq6hN35N6MgSGtBxBHEa2HPQfRdbzP82Z+';
+
+let _digicertG4 = null;
+function _getDigicertG4() {
+  if (!_digicertG4) {
+    _digicertG4 = forge.pki.certificateFromAsn1(forge.asn1.fromDer(forge.util.decode64(DIGICERT_G4_ROOT_B64)));
+  }
+  return _digicertG4;
+}
+
+// Verify the embedded RFC 3161 timestamp on a SignerInfo and return its
+// genTime (Date) if valid, or null if no token is present. Throws if a token is
+// present but invalid (tamper / wrong TSA / mismatched imprint), so a forged
+// timestamp can't pass as a real one.
+//
+//   signerInfoAsn1 — the SignerInfo SEQUENCE (forge asn1 object)
+//   signatureBytes — the SignerInfo signature value (binary string); the
+//                    token's messageImprint must be SHA-256 of these bytes.
+async function _verifyTimestamp(signerInfoAsn1, signatureBytes) {
+  const ID_AA_TS = '1.2.840.113549.1.9.16.2.14';
+  // Unsigned attrs are [1] IMPLICIT, appearing after the signature OCTET STRING.
+  let unsignedAttrs = null;
+  for (const child of signerInfoAsn1.value) {
+    if (child.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC && child.type === 1) { unsignedAttrs = child; break; }
+  }
+  if (!unsignedAttrs) return null; // no timestamp — older/back-compat doc
+
+  let tokenAsn1 = null;
+  for (const attr of unsignedAttrs.value) { // each attr: SEQ { OID, SET OF value }
+    if (forge.asn1.derToOid(attr.value[0].value) === ID_AA_TS) {
+      tokenAsn1 = attr.value[1].value[0]; // the timeStampToken ContentInfo
+      break;
+    }
+  }
+  if (!tokenAsn1) return null;
+
+  // The token is itself a CMS SignedData whose eContent is a TSTInfo.
+  const token = forge.pkcs7.messageFromAsn1(tokenAsn1);
+  const tsa = token.certificates && token.certificates[0];
+  const tsaSI = token.rawCapture.signerInfos && token.rawCapture.signerInfos[0];
+  if (!tsa || !tsaSI) throw new Error('Malformed timestamp token');
+
+  // 0) The signing cert must be a dedicated timestamping cert (RFC 3161 EKU
+  //    id-kp-timeStamping). DigiCert G4 anchors a huge PKI, so without this an
+  //    attacker holding any cert under G4 (e.g. a TLS cert) could sign a forged
+  //    TSTInfo with an arbitrary genTime that still chains to G4. Require
+  //    timeStamping present and no general-purpose usages.
+  const _eku = tsa.getExtension && tsa.getExtension('extKeyUsage');
+  if (!_eku || !_eku.timeStamping) throw new Error('Timestamp signer is not a timestamping certificate');
+  if (_eku.serverAuth || _eku.clientAuth || _eku.codeSigning || _eku.emailProtection)
+    throw new Error('Timestamp signer cert has non-timestamping key usages');
+
+  // 1) TSA cert chains to the pinned DigiCert G4 root (possibly via an
+  //    intermediate carried in the token). Verify each link with WebCrypto.
+  const g4 = _getDigicertG4();
+  const chain = token.certificates.slice();
+  const now = new Date();
+  // Find a path tsa → ... → G4. Simple issuer-walk over the token's own certs.
+  let cur = tsa, hops = 0;
+  while (hops++ < 8) {
+    if (_certIssuerMatches(cur, g4)) {
+      if (!(await _webCryptoVerifyCertSignedBy(cur, g4))) throw new Error('Timestamp chain: G4 signature check failed');
+      break;
+    }
+    const issuer = chain.find(c => _certIssuerMatches(cur, c) && c !== cur);
+    if (!issuer) throw new Error('Timestamp token does not chain to DigiCert G4');
+    if (!(await _webCryptoVerifyCertSignedBy(cur, issuer))) throw new Error('Timestamp chain: link signature check failed');
+    cur = issuer;
+  }
+
+  // 2) TSTInfo: messageImprint must equal SHA-256(signatureBytes), and pull
+  //    genTime. TSTInfo is the eContent OCTET STRING inside the token.
+  const tstInfoDer = token.rawCapture.content && token.rawCapture.content.value &&
+    token.rawCapture.content.value[0] ? token.rawCapture.content.value[0].value : null;
+  if (!tstInfoDer) throw new Error('Timestamp token has no TSTInfo content');
+  const tstInfo = forge.asn1.fromDer(tstInfoDer);
+  // TSTInfo := SEQ { version, policy OID, messageImprint SEQ{algId, OCTETSTRING},
+  //                  serialNumber, genTime GeneralizedTime, ... }
+  const messageImprint = tstInfo.value[2];
+  const imprintHash = forge.util.bytesToHex(messageImprint.value[1].value);
+  const sigHashBuf = await crypto.subtle.digest('SHA-256', _binaryStrToBytes(signatureBytes));
+  const sigHashHex = Array.from(new Uint8Array(sigHashBuf), b => b.toString(16).padStart(2, '0')).join('');
+  if (imprintHash !== sigHashHex) throw new Error('Timestamp imprint does not match this signature');
+
+  // 3) The TSA actually signed this TSTInfo (RSA over DER(signedAttrs as SET)).
+  //    Without this a forger could attach real DigiCert certs to a fake TSTInfo.
+  const tsaSignedAttrs = tsaSI.value[3];
+  if (!tsaSignedAttrs || tsaSignedAttrs.tagClass !== forge.asn1.Class.CONTEXT_SPECIFIC || tsaSignedAttrs.type !== 0)
+    throw new Error('Timestamp token missing signed attributes');
+  const tsaReTagged = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, tsaSignedAttrs.value);
+  const tsaSignedAttrsDer = forge.asn1.toDer(tsaReTagged).getBytes();
+  const tsaSigBytes = tsaSI.value[5].value;
+  if (!(await _webCryptoVerifyRSA(tsa.publicKey, tsaSigBytes, _binaryStrToBytes(tsaSignedAttrsDer))))
+    throw new Error('Timestamp token signature invalid');
+
+  // genTime is a GeneralizedTime: YYYYMMDDHHMMSS[.fff]Z
+  const genTimeDate = _parseGeneralizedTime(tstInfo.value[4].value);
+  if (!genTimeDate) throw new Error('Timestamp genTime unparseable');
+
+  // The TSA cert (and any intermediate) must have been within its validity
+  // window AT genTime. A timestamp legitimately outlives the TSA cert, so we
+  // check against genTime, not "now" — but a cert that wasn't valid when it
+  // claims to have stamped is forged/bogus.
+  for (let c = tsa, n = 0; c && n < 9; n++) {
+    if (!_certValid(c, genTimeDate)) throw new Error('A timestamp chain certificate was not valid at genTime');
+    if (_certIssuerMatches(c, g4)) break;
+    c = chain.find(x => x !== c && _certIssuerMatches(c, x)) || null;
+  }
+
+  return genTimeDate;
+}
+
+function _parseGeneralizedTime(s) {
+  // e.g. "20260531172403Z" or "20260531172403.123Z"
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(s);
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+}
+
 async function initVerification(rootCertB64, oldRootCertB64) {
   const b64s = [rootCertB64];
   if (!SUPPORTS_QR && oldRootCertB64) b64s.push(oldRootCertB64);
@@ -194,6 +319,27 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     const contentBytes = new Uint8Array(contents.length);
     for (let i = 0; i < contents.length; i++) contentBytes[i] = contents.charCodeAt(i);
 
+    // === /ByteRange must span the ENTIRE file with only the /Contents hole cut
+    //     out (defeats signature-wrapping / incremental-update "shadow" attacks)
+    // The signature only covers [a..a+b) ∪ [c..c+d). If we don't pin those to
+    // the file bounds, an attacker can keep the signed bytes byte-identical (so
+    // the hash still matches) while injecting UNSIGNED content a viewer renders:
+    // appended after the signed range as an incremental update, or widened into
+    // the gap. Require:
+    //   • a == 0                  coverage starts at byte 0
+    //   • c + d == view.length    coverage ends at real EOF (nothing appended)
+    //   • the gap [b..c) is exactly the /Contents <hex> token: it starts with
+    //     '<', ends with '>', and its length is contents.length*2 + 2 — so no
+    //     extra unsigned bytes hide inside the gap either.
+    // Our signer (pdf-signing.js) emits exactly this shape, so genuine documents
+    // pass; only tampered ones fail.
+    const [_brA, _brB, _brC, _brD] = byteRange;
+    if (_brA !== 0) throw new Error('Signature does not cover the start of the document.');
+    if (_brB < 0 || _brD < 0 || _brC <= _brB) throw new Error('Invalid signature byte range.');
+    if (_brC + _brD !== view.length) throw new Error('Signature does not cover the whole document (content may have been appended after signing).');
+    if (view[_brB] !== 0x3c /* < */ || view[_brC - 1] !== 0x3e /* > */) throw new Error('Signature byte range does not delimit the /Contents value.');
+    if (_brC - _brB !== contents.length * 2 + 2) throw new Error('Unsigned bytes present in the signature gap.');
+
     // === Bytes covered by the signature: [a..a+b) and [c..c+d) ===
     const signedData = new Uint8Array(byteRange[1] + byteRange[3]);
     let cursor = 0;
@@ -275,6 +421,18 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
     const signedAttrsDer = forge.asn1.toDer(reTagged).getBytes();
     const sigOk = await _webCryptoVerifyRSA(signerCert.publicKey, signatureBytes, _binaryStrToBytes(signedAttrsDer));
     if (!sigOk) throw new Error('Signature verification failed');
+
+    // === Trusted timestamp (PAdES-T) — external, non-backdateable date ===
+    // If the signature carries a DigiCert RFC 3161 token, validate it (chain to
+    // pinned G4, imprint == this signature, TSA signature valid) and use its
+    // genTime as the authoritative signing date. Absent → older doc, no bound.
+    // Throws if a token is present but bogus, so a forged date can't slip through.
+    let trustedTimestamp = null;
+    try {
+      trustedTimestamp = await _verifyTimestamp(signerInfo, signatureBytes);
+    } catch (e) {
+      throw new Error('SuperSigning.UserVisibleException: The document has an invalid trusted timestamp.');
+    }
 
     // === Extract org name (O attribute) from signer cert subject for display ===
     let associationName;
@@ -365,8 +523,21 @@ async function checkDigitalSignatureInternal(buffer, viewable = false) {
         section(fr ? 'Document' : 'Document');
         row(fr ? 'Nom' : 'Name', DocumentDescription);
         row(fr ? 'Paire de langues' : 'Language pair', LanguagePair);
-        row(fr ? 'Date de tamponnage' : 'Date stamped',
-            Object.assign(document.createElement('span'), { textContent: Title, title: Raw }));
+        // Prefer the externally-verified timestamp (can't be backdated) over the
+        // server-reported date. Mark it as externally verified so it's clear the
+        // date doesn't rely on trusting our backend. Falls back to the server
+        // date for older documents that predate the timestamp feature.
+        if (trustedTimestamp) {
+          const dt = trustedTimestamp.toLocaleString(fr ? 'fr-CA' : 'en-CA', { dateStyle: 'long', timeStyle: 'short' });
+          row(fr ? 'Date de tamponnage' : 'Date stamped',
+              Object.assign(document.createElement('span'), {
+                textContent: dt + (fr ? ' (horodatage vérifié)' : ' (verified timestamp)'),
+                title: 'DigiCert RFC 3161 genTime: ' + trustedTimestamp.toISOString(),
+              }));
+        } else {
+          row(fr ? 'Date de tamponnage' : 'Date stamped',
+              Object.assign(document.createElement('span'), { textContent: Title, title: Raw }));
+        }
         section(fr ? 'Tamponné par' : 'Stamped by');
         row(fr ? 'Nom' : 'Name', FullName);
         row(fr ? 'Courriel' : 'Email',

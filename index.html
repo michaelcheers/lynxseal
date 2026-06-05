@@ -30,8 +30,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js" integrity="sha256-2N9WG5+6mOJPLlEw5AlIgJKBu7xVogxBI1nxoKXrNaY=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" integrity="sha256-eeyG+ChWAFsciHkFz8z8++w4Icphx/1alS+qX3ePeRw=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
+<!-- node-forge: ASN.1 toolkit for the RFC 3161 trusted-timestamp step
+     (timestamp.js). Same pinned+SRI build the verify page already uses. -->
+<script src="https://cdn.jsdelivr.net/npm/node-forge@1.4.0/dist/forge.min.js" integrity="sha256-2bkHTmhhIA1nbiXc/peInbXo9BULt2bSnEka1wmlG1g=" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
 <script src="/js/render-declaration.js?v=1.05"></script>
-<script src="/js/pdf-signing.js?v=1"></script>
+<script src="/js/pdf-signing.js?v=3"></script>
+<script src="/js/timestamp.js?v=1"></script>
 <script src="/js/argon2-init.js?v=1"></script>
 
 <!-- fflate — used by pdfjs-loader.js to extract the pdf.js release ZIP

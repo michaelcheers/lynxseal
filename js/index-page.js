@@ -669,6 +669,17 @@ async function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
             signature = await api.post('/api/sign-document', { hash, langFrom, langTo, descr: pkgForm.querySelector('[name=descr]').value }, { asText: true });
           } catch (e) { throw new Error('SuperSigning.UserVisibleException: Digital signature request failed', { cause: e }); }
 
+          // Trusted timestamp (PAdES-T): embed an external DigiCert RFC 3161
+          // token over the signature value so the signing date is provable and
+          // can't be backdated even if the signing key later leaks. Fail loudly
+          // — a document without its timestamp defeats the purpose, so we abort
+          // signing rather than emit one silently.
+          progressMsg.innerHTML = '<span class=en-only>Obtaining trusted timestamp</span><span class=fr-only>Obtention d\'un horodatage de confiance</span>';
+          await sleep();
+          try {
+            signature = await window.LynxsealTimestamp.addTimestampToPkcs7(signature);
+          } catch (e) { throw new Error('SuperSigning.UserVisibleException: Could not obtain a trusted timestamp. Please try again.', { cause: e }); }
+
           progressMsg.innerHTML = '<span class=en-only>Applying digital signature to package</span><span class=fr-only>Application de la signature numérique au paquet</span>';
           await sleep();
           const signedPDF = window.PDFSigningClient.SignPDFFile(signature);

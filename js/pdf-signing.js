@@ -85,8 +85,24 @@
   //   - landscape + footer space:    rotate 90, uniform scale, center
   // Plus: respects the source page's /Rotate dict entry — if it's ~180°,
   // applies an extra 180° flip via negative scale + offset.
+  // Verbatim port of the old PDFSigner_WebAssembly UserVisibleException text.
+  // Same `SuperSigning.UserVisibleException: ` prefix requirement as
+  // MERGE_FAILURE_MSG so site.js getErrorOrNull surfaces it to the user.
+  const ENCRYPTED_FAILURE_MSG = 'SuperSigning.UserVisibleException: This PDF is password-protected or has security/permissions enabled, so its pages cannot be read. Please remove the protection (in Acrobat: File ▸ Properties ▸ Security ▸ No Security) or re-save the file with "Print to PDF", then upload again.';
+
   async function NormalizePDF(pdfBytes, isAtio, addFooterSpace = false) {
+    // ignoreEncryption lets the load() succeed, but pdf-lib (1.17) has NO
+    // decryption support — for a genuinely encrypted document the content
+    // streams stay encrypted and we'd silently emit a BLANK page. This bites
+    // owner-locked PDFs (Word/Acrobat "Protect Document", many converters) that
+    // set an owner password with an EMPTY user password: they open normally in
+    // every viewer, so the member has no idea anything is wrong, yet every page
+    // comes out blank here. MergePDFFiles already rejects encrypted input, but
+    // NormalizePDF runs first in the pipeline and would turn the file into a
+    // valid-but-blank PDF before merge ever sees it. Detect it up front and give
+    // an actionable error instead of a blank result.
     const src = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    if (src.isEncrypted) throw new Error(ENCRYPTED_FAILURE_MSG);
     const out = await PDFDocument.create();
     // Letter = 612 × 792, A4 = 595 × 842 (iText points; same as pdf-lib).
     // Matches C#: new Document(isAtio ? PageSize.Letter : PageSize.A4, 0, 0, 0, 0);
@@ -264,15 +280,31 @@
     const suffixRef = makeStream('\nQ\n');
 
     const contentsKey = PDFName.of('Contents');
-    const currentContents = page.node.get(contentsKey);
+    // /Contents is very commonly an INDIRECT reference (e.g. `/Contents 5 0 R`),
+    // and that reference can resolve to EITHER a single stream OR an array of
+    // streams. pdf-lib's PDFDict.get() returns the raw PDFRef without
+    // dereferencing, so an indirect /Contents *array* slipped past the
+    // `instanceof PDFArray` check below and got wrapped as a single element:
+    // `[prefix, (ref-to-array), suffix]`. A /Contents array entry that is itself
+    // a reference to an array (not a stream) is invalid, so readers silently
+    // dropped the page's real drawing and rendered the page BLANK. This bit
+    // scanned/OCR PDFs (PDFium, Word "Save/Print as PDF", scanners), which split
+    // each page into multiple content streams — an image stream plus an
+    // invisible OCR text-layer stream — stored as a /Contents array. Chrome's
+    // "Save as PDF" rewrites each page as one stream, which is why those worked.
+    // Resolve the reference (lookup dereferences) before deciding how to wrap.
+    const rawContents = page.node.get(contentsKey);
+    const resolvedContents = page.node.lookup(contentsKey);
 
     let arr;
-    if (currentContents instanceof PDFArray) {
+    if (resolvedContents instanceof PDFArray) {
       arr = [prefixRef];
-      for (let i = 0; i < currentContents.size(); i++) arr.push(currentContents.get(i));
+      for (let i = 0; i < resolvedContents.size(); i++) arr.push(resolvedContents.get(i));
       arr.push(suffixRef);
-    } else if (currentContents) {
-      arr = [prefixRef, currentContents, suffixRef];
+    } else if (rawContents) {
+      // Single content stream (direct stream object or indirect ref to one) —
+      // keep the original ref/stream as-is so we don't inline+duplicate bytes.
+      arr = [prefixRef, rawContents, suffixRef];
     } else {
       arr = [prefixRef, suffixRef];
     }
@@ -585,7 +617,13 @@
   // /Contents, compute the byte ranges, hash, then patch /Contents with the
   // padded signature.
 
-  const CSIZE = 2381;
+  // Reserved /Contents hole for the signature PKCS#7. Was 2381 (bare detached
+  // signature). The PAdES-T trusted-timestamp token (DigiCert RFC 3161, ~6 KB
+  // incl. its cert chain) is spliced into the SignerInfo as an unsigned
+  // attribute after signing, so the hole must fit signature + token + ASN.1
+  // overhead. 12000 leaves comfortable headroom; SignPDFFile rejects anything
+  // larger rather than overflow.
+  const CSIZE = 12000;
   const REASON = 'Certified Translation';
 
   // Module-level state mirroring the C# client instance — only one signing
