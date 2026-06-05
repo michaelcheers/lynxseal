@@ -11,8 +11,8 @@
   the <style> block below. Fonts load from same-origin /__fonts.css + /__font/*
   (served by the wrapper SW, which SRI-pins the woff2 from jsdelivr), so no
   font-CDN host is needed in the policy. /js/ui-shell.js is covered by 'self'.
-  TODO: when QR-supporting tenants (ATIO, ATIM) come online, add the S3
-  presigned-URL host to connect-src so checkQRCode's fetch() works.
+  connect-src includes the S3 presigned-URL host so checkQRCode's fetch() of
+  the encrypted document works for QR-supporting tenants (ATIO, ATIM).
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
@@ -21,7 +21,8 @@
     https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js;
   style-src 'self' 'unsafe-inline';
   connect-src 'self'
-    https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js;
+    https://cdn.jsdelivr.net/npm/pdfjs-dist@1.0.813/build/pdf.combined.js
+    https://supersigning-documents.s3.ca-central-1.amazonaws.com;
   img-src 'self' data:;
   font-src 'self' data:;
   base-uri 'none';
