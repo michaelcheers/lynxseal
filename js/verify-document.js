@@ -75,8 +75,13 @@ function switchLanguage(lang) {
 }
 switchLanguage(new URLSearchParams(location.search).get('lang') || 'en');
 
+// MUST match site.js / SuperSigning exactly. The decoded string always ends in
+// 'A=' (GenerateEncryptionKey zeroes the low nibble), so padding is restored by
+// appending the literal 'A=' — NOT by padEnd('='), which yields '==' and makes
+// atob() decode the wrong key bytes → wrong argon2 key → AES-CBC OperationError
+// at decrypt. The O→0 / l→I steps must also run before -→O / =→l.
 function fromCustomBase64(s) {
-  return s.replaceAll('-', 'O').replaceAll('=', 'l').padEnd(Math.ceil(s.length / 4) * 4, '=');
+  return s.replaceAll('O', '0').replaceAll('l', 'I').replaceAll('-', 'O').replaceAll('=', 'l') + 'A=';
 }
 function reportErrorAlert(e) { console.error(e); alert(e.message || e); }
 function getErrorOrNull(e) {
