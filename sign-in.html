@@ -13,6 +13,13 @@
 </head>
 <body>
 <main>
+<!-- SSO interstitial: shown while the hidden estamp-link iframe completes the
+     handoff for SSO orgs (e.g. ATIO). The org name is filled in from
+     window.ORG_NAME by the script below. -->
+<div class="col-md-8 mx-auto" id="ssoShell" style="display:none;text-align:center">
+  <h2><span class="en-only">Signing in with </span><span class="fr-only">Connexion avec </span><span id="ssoOrgName"></span>…</h2>
+  <p class="text-muted"><span class="en-only">Please wait while we sign you in.</span><span class="fr-only">Veuillez patienter pendant la connexion.</span></p>
+</div>
 <div class="col-md-8 mx-auto" id="signinShell">
   <h2 style="text-align:center">
     <span class="en-only">Digital Stamp Sign In</span>
@@ -95,6 +102,74 @@ const qs = new URLSearchParams(location.search);
 
 // Default to English. Per-tenant L10n lives in the wrapper, not the portal.
 document.body.classList.add('lang-en');
+
+// ── SSO orgs (e.g. ATIO) ──────────────────────────────────────────────────
+// When the wrapper SW injected window.SSO_LOGIN_URL, the member authenticates
+// on their org's own site, not with a portal password. A hidden iframe loads
+// the org's estamp-link, which checks the member's existing org session and
+// 302s back to THIS origin's /login as exactly one of two things:
+//   • /login#<code> — member is logged in; <code> is the activation code
+//   • /login        — member is not logged in (blank hash)
+// Once the iframe is same-origin we read the hash once. Code present → exchange
+// via /api/verify (same contract as the verify flow). Blank → the member needs
+// to log in interactively, so we send the whole page to estamp-link; full-page
+// and unauthenticated it routes them through the org's login, after which they
+// return to certify and this flow retries with a live session.
+if (window.SSO_LOGIN_URL) {
+  startSsoLogin(window.SSO_LOGIN_URL);
+}
+
+function startSsoLogin(ssoUrl) {
+  // Hide the portal password UI (SSO members never use it) and show the
+  // "Signing in with <org>…" interstitial.
+  const shell = document.getElementById('signinShell');
+  if (shell) shell.style.display = 'none';
+  const sso = document.getElementById('ssoShell');
+  if (sso) {
+    document.getElementById('ssoOrgName').textContent = window.ORG_NAME || '';
+    sso.style.display = '';
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+  // allow-same-origin is REQUIRED: a sandboxed frame without it gets an opaque
+  // origin, so once estamp-link 302s back to our /login the parent's
+  // origin-match check below would never pass and we couldn't read the hash.
+  iframe.setAttribute('sandbox', 'allow-same-origin');
+  iframe.src = ssoUrl;
+
+  // Poll until the iframe lands back on our origin (reading .location throws
+  // while it's still on the cross-origin org site). Then read the hash once:
+  // a code means signed in, blank means we need interactive login.
+  const poll = setInterval(() => {
+    let here = false, code = null;
+    try {
+      const loc = iframe.contentWindow.location;
+      if (loc.origin === location.origin) { here = true; code = decodeURIComponent((loc.hash || '').substring(1)); }
+    } catch (e) { return; } // still cross-origin — keep polling
+    if (!here) return;
+    clearInterval(poll);
+    iframe.remove();
+    if (code) exchangeSsoCode(code);
+    else location.href = ssoUrl; // blank hash → interactive login top-level
+  }, 250);
+
+  document.body.appendChild(iframe);
+}
+
+async function exchangeSsoCode(code) {
+  try {
+    const r = await api.get('/api/verify?code=' + encodeURIComponent(code), { noAutoRedirect: true });
+    if (r.ok && r.token) {
+      window.PortalBridge.setAuth(r.token, !!r.isAdmin);
+      location.href = qs.get('next') || r.redirectTo || '/';
+      return;
+    }
+    location.href = window.SSO_LOGIN_URL; // unexpected → retry via org login
+  } catch (e) {
+    location.href = window.SSO_LOGIN_URL;
+  }
+}
 
 // Pre-fill bad-signin alert if previous attempt failed and the page was reloaded with ?bad-signin.
 if (qs.has('bad-signin')) {
