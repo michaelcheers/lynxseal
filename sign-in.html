@@ -4,45 +4,64 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign In</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha256-YLGeXaapI0/5IgZopewRJcFXomhRMlYYjugPLSyNjTY=" crossorigin="anonymous" referrerpolicy="no-referrer">
-<link rel="stylesheet" href="/css/site.css">
+<!-- Fonts: SW-proxied, SRI-pinned woff2 (see wrapper sw.js). Never a font CDN
+     <link>. Bare portal (no SW) → /__fonts.css 404s → system-font fallback. -->
+<link rel="stylesheet" href="/__fonts.css">
+<link rel="stylesheet" href="/css/auth.css">
 <link rel="stylesheet" href="/css/lynxseal.css">
 <script src="/js/config.js"></script>
 <script src="/js/portal-bridge.js"></script>
 <script src="/js/api.js"></script>
 </head>
-<body>
-<main>
+<body class="lang-en">
+
+<header class="topbar">
+  <a class="wordmark" id="tenantWordmark" href="/" aria-label="Home">
+    <img id="tenantLogo" src="/logo.svg" alt="LynxSeal">
+  </a>
+  <span class="vr"></span>
+  <span class="breadcrumb"><span class="en-only">Sign in</span><span class="fr-only">Se connecter</span></span>
+  <span class="vr powered-sep" hidden></span>
+  <a class="powered-by" href="https://lynxseal.com" target="_blank" rel="noopener" hidden>
+    <span class="en-only">Powered by</span><span class="fr-only">Propulsé par</span>
+    <img src="/logo.svg" alt="LynxSeal" class="powered-logo">
+  </a>
+</header>
+
+<main class="auth-stage">
 <!-- SSO interstitial: shown while the hidden estamp-link iframe completes the
      handoff for SSO orgs (e.g. ATIO). The org name is filled in from
      window.ORG_NAME by the script below. -->
-<div class="col-md-8 mx-auto" id="ssoShell" style="display:none;text-align:center">
-  <h2><span class="en-only">Signing in with </span><span class="fr-only">Connexion avec </span><span id="ssoOrgName"></span>…</h2>
-  <p class="text-muted"><span class="en-only">Please wait while we sign you in.</span><span class="fr-only">Veuillez patienter pendant la connexion.</span></p>
+<div class="card auth-card" id="ssoShell" style="display:none;text-align:center">
+  <div class="eyebrow" style="margin-bottom:8px"><span class="en-only">Single sign-on</span><span class="fr-only">Authentification unique</span></div>
+  <h2 class="display-md"><span class="en-only">Signing in with </span><span class="fr-only">Connexion avec </span><span id="ssoOrgName"></span>…</h2>
+  <div class="spinner"></div>
+  <p class="meta"><span class="en-only">Please wait while we sign you in.</span><span class="fr-only">Veuillez patienter pendant la connexion.</span></p>
 </div>
-<div class="col-md-8 mx-auto" id="signinShell">
-  <h2 style="text-align:center">
-    <span class="en-only">Digital Stamp Sign In</span>
+
+<div class="card auth-card" id="signinShell">
+  <div class="eyebrow" style="margin-bottom:8px"><span class="en-only">Account</span><span class="fr-only">Compte</span></div>
+  <h2 class="display-md">
+    <span class="en-only">Digital stamp sign in</span>
     <span class="fr-only">Connexion au tampon numérique</span>
   </h2>
+  <p class="sub"><span class="en-only">Sign in to certify a translation.</span><span class="fr-only">Connectez-vous pour certifier une traduction.</span></p>
 
   <!-- Step 1: credentials -->
   <form id="credForm" autocomplete="on">
-    <div class="form-group">
-      <label for="usernameI"><span class="en-only">Email or Phone Number</span><span class="fr-only">Courriel ou numéro de téléphone</span></label>
-      <input id="usernameI" name="emailOrPhoneNumber" class="form-control" required
+    <div class="field">
+      <label class="label" for="usernameI"><span class="en-only">Email or phone number</span><span class="fr-only">Courriel ou numéro de téléphone</span></label>
+      <input id="usernameI" name="emailOrPhoneNumber" class="ctrl" required
         pattern="^([a-zA-Z0-9!#$%&amp;'*+/=?^_`{|}~.-]+@[a-zA-Z0-9.-]+|(\+1 ?)?\(?[0-9]{3}\)?[- ]?[0-9]{3}[- ]?[0-9]{4})$">
     </div>
-    <div class="form-group">
-      <label for="passwordI"><span class="en-only">Password</span><span class="fr-only">Mot de passe</span></label>
-      <input id="passwordI" name="password" type="password" class="form-control" required
+    <div class="field">
+      <label class="label" for="passwordI"><span class="en-only">Password</span><span class="fr-only">Mot de passe</span></label>
+      <input id="passwordI" name="password" type="password" class="ctrl" required
         pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{8,}$">
     </div>
-    <div class="form-group">
+    <div class="field check-row">
       <input type="checkbox" id="rememberMe" name="rememberMe">
-      <label for="rememberMe" style="display:inline">
-        <span class="en-only">Remember Me</span><span class="fr-only">Se souvenir de moi</span>
-      </label>
+      <label for="rememberMe"><span class="en-only">Remember me</span><span class="fr-only">Se souvenir de moi</span></label>
     </div>
     <div id="badSignin" class="alert alert-danger" style="display:none">
       <span class="en-only">Email-password combination not recognized.</span>
@@ -51,52 +70,51 @@
         <span class="en-only">Forgot password</span><span class="fr-only">Mot de passe oublié</span>
       </a>?
     </div>
-    <div class="form-group">
-      <a href="/reset-password.html">
-        <span class="en-only">Forgot Password</span><span class="fr-only">Mot de passe oublié</span>
+    <button class="btn accent lg block" type="submit">
+      <span class="en-only">Sign in</span><span class="fr-only">Se connecter</span>
+    </button>
+    <div style="margin-top:14px;text-align:center">
+      <a class="muted-link" href="/reset-password.html">
+        <span class="en-only">Forgot password?</span><span class="fr-only">Mot de passe oublié&nbsp;?</span>
       </a>
     </div>
-    <button class="btn btn-primary" type="submit">
-      <span class="en-only">Sign In</span><span class="fr-only">Se connecter</span>
-    </button>
   </form>
 
   <!-- Step 2: choose verification method (only shown for new devices when both options are available) -->
   <form id="verifyMethodForm" style="display:none">
-    <div class="form-group">
-      <b><span class="en-only">Choose a verification method</span><span class="fr-only">Choisir une méthode de vérification</span></b>
-      <div style="margin-left:2em;margin-top:.7rem">
-        <div>
-          <input id="vmEmail" name="verificationMethod" value="email" type="radio" checked>
-          <label for="vmEmail" style="display:inline">
-            <span class="en-only">Send me an email with a verification code</span>
-            <span class="fr-only">Envoyer un courriel avec un code de vérification</span>
-          </label>
-        </div>
-        <div>
-          <input id="vmSms" name="verificationMethod" value="sms" type="radio">
-          <label for="vmSms" style="display:inline">
-            <span class="en-only">Send me a text message with a verification code</span>
-            <span class="fr-only">Envoyer un texto avec un code de vérification</span>
-          </label>
-        </div>
+    <div class="field">
+      <label class="label"><span class="en-only">Choose a verification method</span><span class="fr-only">Choisir une méthode de vérification</span></label>
+      <div class="check-row" style="margin-bottom:8px">
+        <input id="vmEmail" name="verificationMethod" value="email" type="radio" checked>
+        <label for="vmEmail">
+          <span class="en-only">Email me a verification code</span>
+          <span class="fr-only">Envoyer un courriel avec un code</span>
+        </label>
+      </div>
+      <div class="check-row">
+        <input id="vmSms" name="verificationMethod" value="sms" type="radio">
+        <label for="vmSms">
+          <span class="en-only">Text me a verification code</span>
+          <span class="fr-only">Envoyer un texto avec un code</span>
+        </label>
       </div>
     </div>
-    <button class="btn btn-primary" type="submit">
+    <button class="btn accent lg block" type="submit">
       <span class="en-only">Continue</span><span class="fr-only">Continuer</span>
     </button>
   </form>
 
   <!-- Step 3: email sent confirmation -->
-  <div id="emailSentMsg" style="display:none">
+  <div id="emailSentMsg" class="alert alert-info" style="display:none">
     <span class="en-only">Click the link sent to your email address from <strong id="emailSentFrom"></strong> to complete the login process.</span>
     <span class="fr-only">Cliquez sur le lien envoyé à votre adresse courriel à partir de <strong id="emailSentFromFr"></strong> pour terminer la connexion.</span>
-    <br>
+    <br><br>
     <span class="en-only">If you don't receive an email within two hours, contact us at <a href="mailto:office@stibc.org">office@stibc.org</a>.</span>
     <span class="fr-only">Si vous ne recevez pas de courriel dans les deux heures, contactez-nous à <a href="mailto:office@stibc.org">office@stibc.org</a>.</span>
   </div>
 </div>
 </main>
+<script src="/js/ui-shell.js?v=2"></script>
 <script>
 const qs = new URLSearchParams(location.search);
 
