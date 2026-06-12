@@ -282,6 +282,15 @@ async function _formDataWithSanitizedPngs(form) {
   }
 
   const isAtio = ctx.association.name === 'ATIO';
+  // TESTING: force QR mode on for STIBC in the experimental lynxseal frontend.
+  // The API doesn't return supportsQr=true for STIBC yet, but Ben wants the QR
+  // flow exercised. lynxseal is all experimental (real users are on the Razor
+  // /app/SuperSigning app), so forcing it here affects no production users.
+  // Remove FORCE_QR (or gate it behind the wrapper) once the API returns the
+  // real flag. Written back onto ctx so every downstream
+  // window.DeclarationContext.association.supportsQr read sees it too.
+  const FORCE_QR = ctx.association.name === 'STIBC';
+  if (FORCE_QR) ctx.association.supportsQr = true;
   const supportsQr = !!ctx.association.supportsQr;
 
   // Show / hide tenant-specific UI
@@ -289,7 +298,10 @@ async function _formDataWithSanitizedPngs(form) {
     document.getElementById('declLangPicker').style.display = '';
     document.getElementById('footerSpaceSourceLbl').style.display = '';
     document.getElementById('footerSpaceTargetLbl').style.display = '';
-    document.getElementById('stampingPrefBlock').style.display = 'none';
+    // Keep the stamp-every-page / first-page-only choice available even in QR
+    // mode (STIBC request). The QR footer is drawn on every page regardless;
+    // this radio only controls the stamp seal image, same as without QR.
+    // (Previously QR mode hid this block and forced every-page.)
   }
   // Stamp colour picker is now offered to every tenant (STIBC requested
   // coloured stamps; previously this was ATIO-only).
@@ -347,7 +359,7 @@ async function _formDataWithSanitizedPngs(form) {
   }
 
   // Default declaration language from ?lang= URL param
-  switchLanguage(q('lang', 'en'));
+  switchLanguage(q('lang', window.WRAPPER_LANG || 'en'));
 
   // QR-only path needs a qrId allocated up front (was Razor-baked)
   if (supportsQr) {
@@ -383,7 +395,7 @@ async function _formDataWithSanitizedPngs(form) {
   }
 
   document.getElementById('mainContent').style.display = '';
-  if (isSafari) switchLanguage(q('lang', 'en'));
+  if (isSafari) switchLanguage(q('lang', window.WRAPPER_LANG || 'en'));
 })();
 
 // === Big interactive blocks ported nearly verbatim from the Razor inline ===
@@ -506,12 +518,20 @@ async function createPackage() {
     await sleep();
     pkg = await window.PDFSigningClient.NormalizePDF(pkg, isAtio, false);
 
-    const stampEveryPage = window.DeclarationContext.association.supportsQr
-      ? true
-      : (pkgForm.querySelector('input[type=radio][name=stampingPref]:checked').value === 'everyPage');
+    // The stamp-every-page / first-page-only choice now applies in QR mode too
+    // (STIBC request) — read the radio regardless of QR. The QR footer is drawn
+    // on every page by AddQRCode independently of this; this only governs the
+    // stamp seal image placement.
+    const stampEveryPage = pkgForm.querySelector('input[type=radio][name=stampingPref]:checked').value === 'everyPage';
 
+    // The stamp PNG is needed when the user chose every-page seal placement
+    // AND, independently, by the QR footer composite (AddQRCode draws the seal
+    // beside the QR on page 1). So render it if either applies — otherwise a
+    // QR-mode "first page only" selection would leave `stamp` undefined and
+    // crash AddQRCode's `await stamp.arrayBuffer()`.
+    const qrMode = !!window.DeclarationContext.association.supportsQr;
     let stamp;
-    if (stampEveryPage) {
+    if (stampEveryPage || qrMode) {
       specificProgressMsg.innerHTML = '<span class=en-only>Fetching Stamp</span><span class=fr-only>Récupération du tampon</span>';
       // Stamp colour applies to all tenants now (was ATIO-only). Falls back
       // to black if the picker isn't present for some reason.
@@ -534,10 +554,20 @@ async function createPackage() {
       const arialBytes = new Uint8Array(await arialResp.arrayBuffer());
       const tld = _getBaseDomain(window.DeclarationContext.association.domainName);
       const fn = window.DeclarationContext.member.firstName;
-      const footerTxt = document.body.classList.contains('lang-fr')
-        ? `Signé numériquement par\n${fn}\nDate: ${new Date().toLocaleDateString('fr-CA', { year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hour12:false,timeZone:'America/Toronto' }).replace(', ',' ')}\nCode de vérification:\n${combinedKey}\n\nPage {0} de {1}\nVérifiez ce document sur\nverifier.${tld}`
-        : `Digitally signed by\n${fn}\nDate: ${new Date().toLocaleDateString('en-CA', { year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hour12:true,timeZone:'America/Toronto' }).replace(', ',' ').replace('a.m.','AM').replace('p.m.','PM')}\nVerification Code:\n${combinedKey}\n\nPage {0} of {1}\nVerify this document at\nverify.${tld}\n`;
-      pkg = await window.PDFSigningClient.AddQRCode(pkg, verifyURL, new Uint8Array(await stamp.arrayBuffer()), footerTxt, arialBytes);
+      const isFr = document.body.classList.contains('lang-fr');
+      const dateStr = isFr
+        ? new Date().toLocaleDateString('fr-CA', { year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hour12:false,timeZone:'America/Toronto' }).replace(', ',' ')
+        : new Date().toLocaleDateString('en-CA', { year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hour12:true,timeZone:'America/Toronto' }).replace(', ',' ').replace('a.m.','AM').replace('p.m.','PM');
+      const footerTxt = isFr
+        ? `Signé numériquement par\n${fn}\nDate: ${dateStr}\nCode de vérification:\n${combinedKey}\n\nPage {0} de {1}\nVérifiez ce document sur\nverifier.${tld}`
+        : `Digitally signed by\n${fn}\nDate: ${dateStr}\nCode de vérification:\n${combinedKey}\n\nPage {0} of {1}\nVerify this document at\nverify.${tld}\n`;
+      // Pages 2+ get this compact one-line variant (no QR/stamp/box). Same key
+      // info — signer, date, verification code, page x/y, verify URL — packed
+      // onto a single small line across the bottom.
+      const smallFooterTxt = isFr
+        ? `${fn} · ${dateStr} · Code: ${combinedKey} · Page {0}/{1} · verifier.${tld}`
+        : `${fn} · ${dateStr} · Code: ${combinedKey} · Page {0}/{1} · verify.${tld}`;
+      pkg = await window.PDFSigningClient.AddQRCode(pkg, verifyURL, new Uint8Array(await stamp.arrayBuffer()), footerTxt, arialBytes, smallFooterTxt);
     }
 
     mainProgressMsg.innerHTML = '<span class=en-only>Stamp</span><span class=fr-only>Tampon</span>';
@@ -545,7 +575,10 @@ async function createPackage() {
     progressBar.value = 100;
     await sleep();
 
-    startSigningProcess(pkg, window.DeclarationContext.association.supportsQr ? false : stampEveryPage, stampEveryPage ? stamp : undefined, encryptionKey);
+    // The seal-placement (drag) modal runs when the user chose every-page,
+    // including in QR mode now (STIBC request). The QR footer seal is drawn
+    // separately by AddQRCode above; the third arg only feeds the drag flow.
+    startSigningProcess(pkg, stampEveryPage, stampEveryPage ? stamp : undefined, encryptionKey);
   } catch (e) { reportError(e); }
 }
 
@@ -639,7 +672,7 @@ async function startSigningProcess(pkg, stampEveryPage, stamp, encryptionKey) {
           modalDlg.style.display = 'none';
           pdfPreviewerDiv.style.display = 'none';
           pkgForm.reset();
-          switchLanguage(q('lang', 'en'));
+          switchLanguage(q('lang', window.WRAPPER_LANG || 'en'));
           return;
         }
         const fileName = getNameWithoutExtension(translatedDocument.files[0].name) + (document.body.classList.contains('lang-fr') ? '_tampon.pdf' : '_stamped.pdf');
@@ -766,7 +799,7 @@ function setDefaultSignatureType(value) {
   } catch (e) { reportErrorAlert(e); }
 }
 function openProfileEditDlg() {
-  try { profileEditDlg.style.display = ''; profileEditForm.reset(); switchLanguage(q('lang', 'en')); getDeclarationPreview(); }
+  try { profileEditDlg.style.display = ''; profileEditForm.reset(); switchLanguage(q('lang', window.WRAPPER_LANG || 'en')); getDeclarationPreview(); }
   catch (e) { reportErrorAlert(e); }
 }
 function closeProfileEditDlg() {

@@ -45,6 +45,18 @@
     });
   } catch {}
 
+  // Wrapper-default language. French wrappers (certifier./verifier. origins)
+  // inject window.WRAPPER_LANG='fr' via tenant-globals; apply it as the default
+  // body language on every portal page. An explicit ?lang= URL param wins —
+  // pages with a language toggle (index, verify-document) call switchLanguage
+  // themselves with the same precedence, so this only matters for pages that
+  // hardcode lang-en (sign-in, reset-password, …).
+  if (window.WRAPPER_LANG === 'fr' && !new URLSearchParams(location.search).get('lang')) {
+    const applyFr = () => { document.body.classList.add('lang-fr'); document.body.classList.remove('lang-en'); };
+    if (document.body) applyFr();
+    else document.addEventListener('DOMContentLoaded', applyFr);
+  }
+
   // Append the org name to the browser tab title (e.g. "Sign In · STIBC").
   // The portal pages set just the page name; we tack on the org from the
   // wrapper-injected window.ORG_NAME.

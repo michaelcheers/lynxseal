@@ -332,11 +332,17 @@
   }
 
   // ----- AddQRCode + footer ------------------------------------------------
-  // Server: on every page, draws [stamp image | text | QR code | border box]
-  // centered horizontally at 0.25" from bottom. Text is formatted with
-  // {0} = page num, {1} = total pages. URLs matching /verify|verifier\.[…]/
-  // become clickable hyperlinks. Font supplied as raw TTF bytes by caller.
-  async function AddQRCode(pdfBytes, verifyURL, stampPngBytes, footerTextTemplate, fontBytes) {
+  // STIBC layout: the FULL footer composite [stamp | text | QR | border box]
+  // is drawn on PAGE 1 ONLY. Pages 2+ get a single small key-info text line
+  // across the bottom (no QR, no stamp, no border) — `smallFooterText`, which
+  // also supports {0}/{1} page placeholders. (ATIO historically drew the full
+  // composite on every page; passing the same template as smallFooterText is
+  // not how this is called now — index-page.js supplies a dedicated one-liner.)
+  //
+  // Text on page 1 is formatted with {0} = page num, {1} = total pages. URLs
+  // matching /verify|verifier\.[…]/ become clickable hyperlinks. Fonts as raw
+  // TTF bytes from the caller.
+  async function AddQRCode(pdfBytes, verifyURL, stampPngBytes, footerTextTemplate, fontBytes, smallFooterText) {
     const pdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     pdf.registerFontkit(window.fontkit);
     const font = await pdf.embedFont(fontBytes, { subset: true });
@@ -350,7 +356,43 @@
     const LEADING = FONT_SIZE * 1.2;
     const HYPERLINK_RE = /\b(?:verify|verifier)\.[\w.-]+\.(?:ca|com|org|net)\b/gi;
 
+    // ---- Pages 2+: small single-line key-info footer (no QR / stamp / box) ----
+    // Drawn centered ~0.18" from the bottom. Wraps only if it can't fit the
+    // page width (it normally won't). Verification-URL substrings still become
+    // clickable links to match page 1.
+    const SMALL_FONT_SIZE = 7.5;
+    function drawSmallFooter(page, pageIndex) {
+      if (!smallFooterText) return;
+      const { width: pw } = page.getSize();
+      const text = smallFooterText
+        .replaceAll('{0}', String(pageIndex + 1))
+        .replaceAll('{1}', String(totalPages));
+      const margin = 36; // 0.5" side margins
+      const maxWidth = pw - 2 * margin;
+      const y = 0.18 * 72;
+      const lines = _wrapAndLinkify(text, font, SMALL_FONT_SIZE, maxWidth, HYPERLINK_RE);
+      // Single line expected; if it wraps, stack upward from `y`.
+      let lineY = y + (lines.length - 1) * SMALL_FONT_SIZE * 1.2;
+      for (const lineRuns of lines) {
+        const lineWidth = lineRuns.reduce((w, r) => w + font.widthOfTextAtSize(r.text, SMALL_FONT_SIZE), 0);
+        let cursorX = (pw - lineWidth) / 2;
+        for (const run of lineRuns) {
+          page.drawText(run.text, { x: cursorX, y: lineY, size: SMALL_FONT_SIZE, font, color: rgb(0, 0, 0) });
+          const runWidth = font.widthOfTextAtSize(run.text, SMALL_FONT_SIZE);
+          if (run.url) {
+            _addLinkAnnotation(pdf, page, cursorX, lineY - 1, runWidth, SMALL_FONT_SIZE + 2, run.url);
+            page.drawLine({ start: { x: cursorX, y: lineY - 1 }, end: { x: cursorX + runWidth, y: lineY - 1 }, thickness: 0.1, color: rgb(0, 0, 0) });
+          }
+          cursorX += runWidth;
+        }
+        lineY -= SMALL_FONT_SIZE * 1.2;
+      }
+    }
+
     for (let p = 0; p < totalPages; p++) {
+      // Pages 2+ get only the small key-info line.
+      if (p > 0) { drawSmallFooter(pages[p], p); continue; }
+
       const page = pages[p];
       const { width: pw } = page.getSize();
       const imageWidth = 110;

@@ -73,7 +73,7 @@ function switchLanguage(lang) {
   if (lang === 'fr') url.searchParams.set('lang', 'fr'); else url.searchParams.delete('lang');
   history.replaceState(null, '', url.toString());
 }
-switchLanguage(new URLSearchParams(location.search).get('lang') || 'en');
+switchLanguage(new URLSearchParams(location.search).get('lang') || window.WRAPPER_LANG || 'en');
 
 // fromCustomBase64 / getErrorOrNull / reportErrorAlert come from site.js (loaded
 // before this script). A local fromCustomBase64 used to live here and had a
